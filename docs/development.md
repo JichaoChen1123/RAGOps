@@ -56,8 +56,8 @@ npm --prefix frontend run dev
 
 ```bash
 uv sync --project backend --extra dev --frozen
-uv run --project backend ruff check --config backend/pyproject.toml backend/app tests/backend scripts
-uv run --project backend pytest -c backend/pyproject.toml tests/backend -q
+uv run --project backend ruff check --config backend/pyproject.toml backend/app tests scripts
+uv run --project backend pytest -c backend/pyproject.toml tests/backend tests/evaluation -q --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=85
 
 npm --prefix frontend ci
 npm --prefix frontend run typecheck
@@ -70,6 +70,8 @@ docker compose build
 ```
 
 `scripts/validate_repository.py` 会检查 Markdown 基础格式与本地链接、JSON/JSONL 可解析性、脱敏 fixture 的关键 oracle，以及 YAML（包括 Compose 和 GitHub Actions）语法。
+
+MVP 的测试矩阵、验收标准、未覆盖风险和本地受限环境说明见 `docs/qa/mvp-acceptance.md`。
 
 ## Windows Git hook 的 `sh.exe` 风险
 
