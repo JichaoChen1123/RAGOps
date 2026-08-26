@@ -4,7 +4,7 @@ This service implements the smallest persistent RAGOps loop:
 
 `dataset -> immutable publish -> evaluation job -> sample results -> report`
 
-The local default is SQLite plus a deterministic in-process executor. The executor only proves orchestration and persistence; `execution_success_rate` is an operational placeholder, not a RAG quality metric. The execution contract is isolated so a queue-backed worker and real evaluators can replace it later.
+The local default is SQLite plus a deterministic in-process executor. It computes auditable RAG metrics and evidence-backed MVP diagnoses without an external LLM judge. The execution contract remains isolated so a queue-backed worker can replace local orchestration later.
 
 ## Requirements
 
@@ -17,7 +17,7 @@ Run from the repository root:
 
 ```bash
 uv sync --project backend --extra dev
-uv run --project backend pytest tests/backend -q
+uv run --project backend pytest tests/backend tests/evaluation -q
 ```
 
 Initialize a persistent local database and start the API:
@@ -47,6 +47,14 @@ All resource APIs use the `/api/v1` prefix.
 5. `GET /evaluation-jobs/{job_id}`, `/samples`, and `/report` return persisted status and results.
 
 Creation accepts `Idempotency-Key`. Reusing the key with the same request returns the original job; reusing it with different input returns `409 IDEMPOTENCY_KEY_CONFLICT`.
+
+## Deterministic evaluation contract
+
+`backend/app/evaluation/` computes sample-level Recall@K, reciprocal rank, NDCG@K, context precision/recall/relevance ratio, citation hit rate, and normalized reference exact match. Reports macro-average only `status=ok` values and expose evaluated/excluded counts; missing gold, citations, answers, or judgements return `not_applicable` rather than a fabricated zero.
+
+The rules currently cover retrieval evidence missing, context pollution, citation missing, and rerank regression. Every emitted result includes a versioned rule/profile, reason, evidence, confidence, and suggestions. If required evidence such as pre-rerank rank is absent, the rule emits `not_determinable` with `missing_inputs`.
+
+Dataset contexts may optionally supply `relevance_grade` (0-3), `usefulness`, and `rank_before`; citations may supply `resolved` and `supports_claim`. When optional judgements are absent, gold evidence/document alignment is the deterministic relevance source. Thresholds and retrieval windows live in `EvaluationProfile`, and job metric `k` parameters select the requested retrieval windows.
 
 ## Database initialization
 

@@ -127,8 +127,8 @@ class EvaluationReportResponse(BaseModel):
                     "metrics": [
                         {
                             "metric_name": "execution_success_rate",
-                            "metric_version": "placeholder-1.0.0",
-                            "status": "succeeded",
+                            "metric_version": "1.0.0",
+                            "status": "ok",
                             "value": 1.0,
                         }
                     ],

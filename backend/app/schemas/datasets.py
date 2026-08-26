@@ -31,13 +31,25 @@ class RetrievedContextInput(BaseModel):
     evidence_ids: list[str] = Field(default_factory=list)
     text: str = ""
     score: float | None = None
+    relevance_grade: int | None = Field(default=None, ge=0, le=3)
+    rank_before: int | None = Field(default=None, ge=1)
+    usefulness: bool | None = None
 
 
 class CitationInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    citation_id: str | None = Field(default=None, min_length=1, max_length=300)
     claim_id: str | None = None
     chunk_id: str = Field(min_length=1, max_length=300)
+    resolved: bool | None = None
+    supports_claim: bool | None = None
+
+    @model_validator(mode="after")
+    def support_requires_resolution(self) -> CitationInput:
+        if self.supports_claim is True and self.resolved is False:
+            raise ValueError("a citation cannot support a claim when it does not resolve")
+        return self
 
 
 class DatasetSampleInput(BaseModel):
@@ -70,7 +82,11 @@ class DatasetSampleInput(BaseModel):
         if len(ranks) != len(set(ranks)):
             raise ValueError("retrieved context ranks must be unique")
         chunk_ids = {context.chunk_id for context in self.retrieved_contexts}
-        missing = [citation.chunk_id for citation in self.citations if citation.chunk_id not in chunk_ids]
+        missing = [
+            citation.chunk_id
+            for citation in self.citations
+            if citation.resolved is not False and citation.chunk_id not in chunk_ids
+        ]
         if missing:
             raise ValueError(f"citation targets are missing from retrieved contexts: {missing}")
         return self

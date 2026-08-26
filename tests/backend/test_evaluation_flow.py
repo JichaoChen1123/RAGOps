@@ -37,6 +37,10 @@ def test_complete_persisted_evaluation_loop(client, sample_payload) -> None:
     assert sample_results.json()["total"] == 2
     assert {item["status"] for item in sample_results.json()["items"]} == {"succeeded"}
     assert sample_results.json()["items"][0]["retrieval_results"][0]["doc_id"] == "policy-audit"
+    metric_names = {
+        metric["metric_name"] for metric in sample_results.json()["items"][0]["metric_results"]
+    }
+    assert {"recall_at_3", "mrr_at_3", "ndcg_at_3", "citation_hit_rate"} <= metric_names
     assert report.status_code == 200
     assert report.json()["summary"] == {
         "total_count": 2,
@@ -45,7 +49,8 @@ def test_complete_persisted_evaluation_loop(client, sample_payload) -> None:
     }
     assert report.json()["metrics"][0]["metric_name"] == "execution_success_rate"
     assert report.json()["metrics"][0]["value"] == 1.0
-    assert "placeholder" in report.json()["metrics"][0]["details"]["note"].lower()
+    assert report.json()["metrics"][0]["metric_version"] == "1.0.0"
+    assert all("placeholder" not in metric["metric_version"] for metric in report.json()["metrics"])
 
 
 def test_job_idempotency_and_conflict(client, sample_payload) -> None:
