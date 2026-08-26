@@ -9,6 +9,7 @@ from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.errors import DomainError
+from app.evaluation.aggregation import aggregate_metric_results
 from app.execution.contracts import EvaluationExecutor
 from app.execution.deterministic import DeterministicExecutor
 from app.persistence.db import Database
@@ -181,11 +182,13 @@ def execute_job(
     job_id: str,
     executor: EvaluationExecutor | None = None,
 ) -> None:
-    runner = executor or DeterministicExecutor()
+    runner = executor
     with database.session() as session:
         job = get_job(session, job_id)
         if job.status != "queued":
             return
+        if runner is None:
+            runner = DeterministicExecutor.from_metric_config(job.metric_config)
         transition_job(job, "running")
         job.started_at = utc_now()
         job.running_count = job.total_count
@@ -213,26 +216,24 @@ def execute_job(
         job.finished_at = utc_now()
         job.progress = 1.0
         if terminal_status in {"succeeded", "partial_failed"}:
-            success_rate = job.succeeded_count / job.total_count
+            sample_metric_results = list(
+                session.scalars(
+                    select(EvaluationJobSample.metric_results)
+                    .where(EvaluationJobSample.job_id == job.id)
+                    .order_by(EvaluationJobSample.created_at)
+                )
+            )
             report = EvaluationReport(
                 job_id=job.id,
                 status=terminal_status,
                 total_count=job.total_count,
                 succeeded_count=job.succeeded_count,
                 failed_count=job.failed_count,
-                metrics=[
-                    {
-                        "metric_name": "execution_success_rate",
-                        "metric_version": "placeholder-1.0.0",
-                        "status": "succeeded",
-                        "value": success_rate,
-                        "evaluated_count": job.total_count,
-                        "excluded_count": 0,
-                        "details": {
-                            "note": "Operational placeholder only; no RAG quality score was computed."
-                        },
-                    }
-                ],
+                metrics=aggregate_metric_results(
+                    sample_metric_results,
+                    total_count=job.total_count,
+                    succeeded_count=job.succeeded_count,
+                ),
             )
             session.add(report)
         else:
