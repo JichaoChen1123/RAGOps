@@ -1,0 +1,52 @@
+name: ${COMPOSE_PROJECT_NAME:-ragops}
+
+services:
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      RAGOPS_AUTO_CREATE_SCHEMA: ${RAGOPS_AUTO_CREATE_SCHEMA:-true}
+      RAGOPS_DATABASE_URL: ${RAGOPS_DATABASE_URL:-sqlite:////data/ragops.db}
+      RAGOPS_ENVIRONMENT: ${RAGOPS_ENVIRONMENT:-development}
+      RAGOPS_LOG_LEVEL: ${RAGOPS_LOG_LEVEL:-INFO}
+    init: true
+    ports:
+      - "${RAGOPS_BACKEND_PORT:-8000}:8000"
+    volumes:
+      - ragops-data:/data
+    healthcheck:
+      test:
+        - CMD
+        - python
+        - -c
+        - >-
+          import urllib.request;
+          urllib.request.urlopen('http://127.0.0.1:8000/health/ready', timeout=3)
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 10s
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+      args:
+        VITE_API_BASE_URL: ${VITE_API_BASE_URL:-/api/v1}
+        VITE_API_MODE: ${VITE_API_MODE:-mock}
+    depends_on:
+      backend:
+        condition: service_healthy
+    init: true
+    ports:
+      - "${RAGOPS_FRONTEND_PORT:-5173}:80"
+    healthcheck:
+      test: ["CMD", "wget", "--quiet", "--output-document=-", "http://127.0.0.1/healthz"]
+      interval: 5s
+      timeout: 4s
+      retries: 12
+      start_period: 5s
+
+volumes:
+  ragops-data:
