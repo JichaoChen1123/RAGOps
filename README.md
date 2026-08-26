@@ -1,7 +1,10 @@
 # RAGOps
 
-面向 RAG 应用的质量评测与故障诊断平台。
+RAG 质量评测、故障诊断与可观测性设计。
 
-## 架构文档
+## 设计文档
 
 - [后端平台架构、API、数据模型与异步评测流程](docs/architecture/backend.md)
+- [评测指标、数据模型与执行流程](docs/evaluation/metrics.md)
+- [故障诊断规则](docs/evaluation/diagnosis-rules.md)
+- [评测数据集格式与样例](examples/datasets/README.md)
