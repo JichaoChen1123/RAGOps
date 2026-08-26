@@ -1,0 +1,147 @@
+{
+  "schema_version": "1.0",
+  "float_tolerance": 0.000001,
+  "conventions": {
+    "ranking_deduplication": "deduplicate by document_id and keep the earliest rank",
+    "empty_gold": "return null with reason=not_applicable",
+    "percentile": "nearest-rank",
+    "missing_numeric_value": "exclude from numeric aggregation and increment missing_count"
+  },
+  "cases": [
+    {
+      "case_id": "ranked-mixed",
+      "metric_group": "retrieval",
+      "input": {
+        "gold_document_ids": ["A", "B"],
+        "retrieved_document_ids": ["X", "A", "Y", "B"],
+        "relevance_grades": [0, 1, 0, 1]
+      },
+      "expected": {
+        "at_1": {"recall": 0.0, "mrr": 0.0, "ndcg": 0.0},
+        "at_3": {"recall": 0.5, "mrr": 0.5, "ndcg": 0.38685280723454163},
+        "at_4": {"recall": 1.0, "mrr": 0.5, "ndcg": 0.6509209298071324}
+      },
+      "intermediates": {
+        "idcg_at_3": 1.6309297535714573,
+        "dcg_at_3": 0.6309297535714574,
+        "idcg_at_4": 1.6309297535714573,
+        "dcg_at_4": 1.0616063116448504
+      }
+    },
+    {
+      "case_id": "duplicate-document",
+      "metric_group": "retrieval",
+      "input": {
+        "gold_document_ids": ["A", "B"],
+        "retrieved_document_ids": ["A", "A", "B"],
+        "relevance_grades": [1, 1, 1],
+        "k": 2
+      },
+      "expected": {
+        "deduplicated_document_ids": ["A", "B"],
+        "recall": 1.0,
+        "mrr": 1.0,
+        "ndcg": 1.0
+      }
+    },
+    {
+      "case_id": "no-gold",
+      "metric_group": "retrieval",
+      "input": {
+        "gold_document_ids": [],
+        "retrieved_document_ids": ["X"],
+        "relevance_grades": [0],
+        "k": 1
+      },
+      "expected": {
+        "recall": null,
+        "mrr": null,
+        "ndcg": null,
+        "reason": "not_applicable"
+      }
+    },
+    {
+      "case_id": "context-partial",
+      "metric_group": "context",
+      "input": {
+        "context_relevance_flags": [1, 0, 1],
+        "gold_evidence_ids": ["e1", "e2", "e3"],
+        "covered_gold_evidence_ids": ["e1", "e3"]
+      },
+      "expected": {
+        "context_precision": 0.8333333333333333,
+        "context_recall": 0.6666666666666666
+      },
+      "intermediates": {
+        "precision_at_relevant_positions": [1.0, 0.6666666666666666],
+        "covered_count": 2,
+        "gold_count": 3
+      }
+    },
+    {
+      "case_id": "faithfulness-partial",
+      "metric_group": "generation",
+      "input": {
+        "claim_judgements": [
+          {"claim_id": "c1", "verdict": "supported"},
+          {"claim_id": "c2", "verdict": "supported"},
+          {"claim_id": "c3", "verdict": "unsupported"}
+        ]
+      },
+      "expected": {
+        "faithfulness": 0.6666666666666666,
+        "supported_count": 2,
+        "judged_count": 3,
+        "unsupported_claim_ids": ["c3"]
+      }
+    },
+    {
+      "case_id": "citation-partial",
+      "metric_group": "citation",
+      "input": {
+        "citation_judgements": [
+          {"citation_id": "r1", "resolves": true, "supports_claim": true},
+          {"citation_id": "r2", "resolves": true, "supports_claim": true},
+          {"citation_id": "r3", "resolves": false, "supports_claim": false}
+        ]
+      },
+      "expected": {
+        "citation_hit_rate": 0.6666666666666666,
+        "hit_count": 2,
+        "citation_count": 3,
+        "invalid_citation_ids": ["r3"]
+      }
+    },
+    {
+      "case_id": "answer-relevancy-stub",
+      "metric_group": "generation",
+      "input": {
+        "judge": "stub-answer-relevancy-v1",
+        "raw_score": 0.75,
+        "question": "如何轮换 API 密钥？",
+        "answer": "在安全设置中创建新密钥，迁移客户端后停用旧密钥。"
+      },
+      "expected": {
+        "answer_relevancy": 0.75,
+        "judge": "stub-answer-relevancy-v1"
+      }
+    },
+    {
+      "case_id": "latency-and-cost-missing",
+      "metric_group": "operational",
+      "input": {
+        "latency_ms": [100, 200, 1000],
+        "cost": [
+          {"amount": 0.01, "currency": "USD"},
+          null,
+          {"amount": 0.03, "currency": "USD"}
+        ],
+        "price_version": "test-price-v1"
+      },
+      "expected": {
+        "latency": {"count": 3, "mean_ms": 433.3333333333333, "p50_ms": 200, "p95_ms": 1000},
+        "cost": {"evaluated_count": 2, "missing_count": 1, "total_amount": 0.04, "currency": "USD", "price_version": "test-price-v1"}
+      }
+    }
+  ]
+}
