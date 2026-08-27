@@ -6,6 +6,7 @@ from sqlalchemy.orm import Session
 from app.api.dependencies import get_session
 from app.schemas.datasets import (
     DatasetCreate,
+    DatasetCreateResponse,
     DatasetImportRequest,
     DatasetImportResponse,
     DatasetListResponse,
@@ -20,12 +21,16 @@ SessionDep = Annotated[Session, Depends(get_session)]
 
 @router.post(
     "",
-    response_model=DatasetResponse,
+    response_model=DatasetCreateResponse,
     status_code=status.HTTP_201_CREATED,
     summary="Create a draft dataset",
 )
-def create_dataset(payload: DatasetCreate, session: SessionDep) -> DatasetResponse:
-    return service.to_response(service.create_dataset(session, payload))
+def create_dataset(payload: DatasetCreate, session: SessionDep) -> DatasetCreateResponse:
+    dataset, imported_samples = service.create_dataset(session, payload)
+    return DatasetCreateResponse(
+        **service.to_response(dataset).model_dump(),
+        imported_samples=imported_samples,
+    )
 
 
 @router.get("", response_model=DatasetListResponse, summary="List datasets")

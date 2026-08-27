@@ -31,7 +31,8 @@ def test_complete_persisted_evaluation_loop(client, sample_payload) -> None:
     sample_results = client.get(f"/api/v1/evaluation-jobs/{job_id}/samples")
     report = client.get(f"/api/v1/evaluation-jobs/{job_id}/report")
 
-    assert status_response.json()["status"] == "succeeded"
+    assert status_response.json()["status"] == "completed"
+    assert status_response.json()["outcome"] == "succeeded"
     assert status_response.json()["progress"] == 1.0
     assert status_response.json()["succeeded_count"] == 2
     assert sample_results.json()["total"] == 2
@@ -73,7 +74,10 @@ def test_job_idempotency_and_conflict(client, sample_payload) -> None:
 
 
 def test_draft_dataset_and_unknown_job_errors(client, sample_payload) -> None:
-    draft = client.post("/api/v1/datasets", json={"name": "draft"})
+    draft = client.post(
+        "/api/v1/datasets",
+        json={"name": "draft", "owner": "backend-tests"},
+    )
     imported = client.post(
         f"/api/v1/datasets/{draft.json()['id']}/samples:import",
         json={"samples": [sample_payload]},

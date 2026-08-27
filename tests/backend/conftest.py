@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from collections.abc import Iterator
-from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -11,10 +10,10 @@ from app.main import create_app
 
 
 @pytest.fixture
-def client(tmp_path: Path) -> Iterator[TestClient]:
+def client() -> Iterator[TestClient]:
     settings = Settings(
         environment="test",
-        database_url=f"sqlite:///{tmp_path / 'ragops-test.db'}",
+        database_url="sqlite://",
         log_level="WARNING",
         auto_create_schema=True,
     )
@@ -51,7 +50,12 @@ def sample_payload() -> dict[str, object]:
 def create_published_dataset(client: TestClient, samples: list[dict[str, object]]) -> str:
     created = client.post(
         "/api/v1/datasets",
-        json={"name": f"dataset-{samples[0]['sample_id']}", "schema_version": "1.0"},
+        json={
+            "name": f"dataset-{samples[0]['sample_id']}",
+            "owner": "backend-tests",
+            "version": "v1",
+            "schema_version": "1.0",
+        },
     )
     assert created.status_code == 201
     dataset_id = created.json()["id"]

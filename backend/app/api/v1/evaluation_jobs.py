@@ -10,7 +10,10 @@ from app.schemas.jobs import (
     EvaluationJobListResponse,
     EvaluationJobResponse,
     EvaluationReportResponse,
+    EvaluationSampleResponse,
     EvaluationSampleListResponse,
+    ReportExportResponse,
+    SampleReviewUpdate,
 )
 from app.services import jobs as service
 
@@ -67,6 +70,20 @@ def list_evaluation_samples(job_id: str, session: SessionDep) -> EvaluationSampl
     return EvaluationSampleListResponse(items=items, total=len(items))
 
 
+@router.patch(
+    "/{job_id}/samples/{sample_id}/review",
+    response_model=EvaluationSampleResponse,
+    summary="Update a sample diagnosis review status",
+)
+def update_sample_review(
+    job_id: str,
+    sample_id: str,
+    payload: SampleReviewUpdate,
+    session: SessionDep,
+) -> EvaluationSampleResponse:
+    return service.update_sample_review(session, job_id, sample_id, payload)
+
+
 @router.get(
     "/{job_id}/report",
     response_model=EvaluationReportResponse,
@@ -74,3 +91,12 @@ def list_evaluation_samples(job_id: str, session: SessionDep) -> EvaluationSampl
 )
 def get_evaluation_report(job_id: str, session: SessionDep) -> EvaluationReportResponse:
     return service.get_report(session, job_id)
+
+
+@router.get(
+    "/{job_id}/report/export",
+    response_model=ReportExportResponse,
+    summary="Export a report and its sample summaries as JSON data",
+)
+def export_evaluation_report(job_id: str, session: SessionDep) -> ReportExportResponse:
+    return service.export_report(session, job_id)

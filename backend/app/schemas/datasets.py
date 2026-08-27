@@ -6,22 +6,6 @@ from typing import Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
-class DatasetCreate(BaseModel):
-    model_config = ConfigDict(extra="forbid")
-
-    name: str = Field(min_length=1, max_length=160, examples=["customer-support-golden-set"])
-    description: str | None = Field(default=None, max_length=2000)
-    schema_version: Literal["1.0"] = "1.0"
-
-    @field_validator("name")
-    @classmethod
-    def non_blank_name(cls, value: str) -> str:
-        stripped = value.strip()
-        if not stripped:
-            raise ValueError("name must not be blank")
-        return stripped
-
-
 class RetrievedContextInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -92,6 +76,32 @@ class DatasetSampleInput(BaseModel):
         return self
 
 
+class DatasetCreate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=160, examples=["customer-support-golden-set"])
+    description: str | None = Field(default=None, max_length=2000)
+    owner: str = Field(min_length=1, max_length=120, examples=["quality-platform"])
+    version: str = Field(default="v1", min_length=1, max_length=40, examples=["v1"])
+    schema_version: Literal["1.0"] = "1.0"
+    samples: list[DatasetSampleInput] = Field(default_factory=list, max_length=1000)
+
+    @field_validator("name", "owner", "version")
+    @classmethod
+    def non_blank_text(cls, value: str) -> str:
+        stripped = value.strip()
+        if not stripped:
+            raise ValueError("value must not be blank")
+        return stripped
+
+    @model_validator(mode="after")
+    def unique_sample_ids(self) -> DatasetCreate:
+        ids = [sample.sample_id for sample in self.samples]
+        if len(ids) != len(set(ids)):
+            raise ValueError("sample_id must be unique within a batch")
+        return self
+
+
 class DatasetImportRequest(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
@@ -114,8 +124,9 @@ class DatasetResponse(BaseModel):
                     "id": "01912345-6789-7abc-8def-0123456789ab",
                     "name": "customer-support-golden-set",
                     "description": "Synthetic, de-identified support questions.",
+                    "owner": "quality-platform",
                     "schema_version": "1.0",
-                    "version": 1,
+                    "version": "v1",
                     "status": "published",
                     "sample_count": 6,
                     "content_sha256": "0" * 64,
@@ -129,8 +140,9 @@ class DatasetResponse(BaseModel):
     id: str
     name: str
     description: str | None
+    owner: str
     schema_version: str
-    version: int
+    version: str
     status: Literal["draft", "published"]
     sample_count: int
     content_sha256: str | None
@@ -163,3 +175,7 @@ class DatasetImportResponse(BaseModel):
     accepted: int
     rejected: int
     dataset: DatasetResponse
+
+
+class DatasetCreateResponse(DatasetResponse):
+    imported_samples: int

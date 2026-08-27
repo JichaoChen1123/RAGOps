@@ -15,6 +15,7 @@ from app.schemas.datasets import (
     DatasetCreate,
     DatasetImportRequest,
     DatasetResponse,
+    DatasetSampleInput,
     DatasetSampleResponse,
 )
 
@@ -45,14 +46,48 @@ def _encode_cursor(offset: int) -> str:
     return base64.urlsafe_b64encode(str(offset).encode("ascii")).decode("ascii")
 
 
-def create_dataset(session: Session, payload: DatasetCreate) -> Dataset:
+def _add_samples(
+    session: Session,
+    dataset: Dataset,
+    samples: list[DatasetSampleInput],
+) -> int:
+    start_ordinal = dataset.sample_count
+    for index, sample in enumerate(samples, start=1):
+        raw = sample.model_dump(mode="json")
+        session.add(
+            DatasetSample(
+                dataset_id=dataset.id,
+                ordinal=start_ordinal + index,
+                external_id=sample.sample_id,
+                question=sample.question,
+                reference_answer=sample.reference_answer,
+                gold_document_ids=sample.gold_document_ids,
+                gold_evidence_ids=sample.gold_evidence_ids,
+                retrieved_contexts=[item.model_dump(mode="json") for item in sample.retrieved_contexts],
+                answer=sample.answer,
+                citations=[item.model_dump(mode="json") for item in sample.citations],
+                tags=sample.tags,
+                expected_diagnoses=sample.expected_diagnoses,
+                metadata_json=sample.metadata,
+                content_sha256=_canonical_hash(raw),
+            )
+        )
+    dataset.sample_count += len(samples)
+    return len(samples)
+
+
+def create_dataset(session: Session, payload: DatasetCreate) -> tuple[Dataset, int]:
     dataset = Dataset(
         name=payload.name,
         description=payload.description,
+        owner=payload.owner,
+        version=payload.version,
         schema_version=payload.schema_version,
     )
     session.add(dataset)
     try:
+        session.flush()
+        imported_samples = _add_samples(session, dataset, payload.samples)
         session.commit()
     except IntegrityError as exc:
         session.rollback()
@@ -62,7 +97,7 @@ def create_dataset(session: Session, payload: DatasetCreate) -> Dataset:
             status_code=status.HTTP_409_CONFLICT,
             details={"name": payload.name},
         ) from exc
-    return dataset
+    return dataset, imported_samples
 
 
 def get_dataset(session: Session, dataset_id: str) -> Dataset:
@@ -126,30 +161,9 @@ def import_samples(
             details={"sample_ids": sorted(existing_ids)},
         )
 
-    start_ordinal = dataset.sample_count
-    for index, sample in enumerate(payload.samples, start=1):
-        raw = sample.model_dump(mode="json")
-        session.add(
-            DatasetSample(
-                dataset_id=dataset.id,
-                ordinal=start_ordinal + index,
-                external_id=sample.sample_id,
-                question=sample.question,
-                reference_answer=sample.reference_answer,
-                gold_document_ids=sample.gold_document_ids,
-                gold_evidence_ids=sample.gold_evidence_ids,
-                retrieved_contexts=[item.model_dump(mode="json") for item in sample.retrieved_contexts],
-                answer=sample.answer,
-                citations=[item.model_dump(mode="json") for item in sample.citations],
-                tags=sample.tags,
-                expected_diagnoses=sample.expected_diagnoses,
-                metadata_json=sample.metadata,
-                content_sha256=_canonical_hash(raw),
-            )
-        )
-    dataset.sample_count += len(payload.samples)
+    accepted = _add_samples(session, dataset, payload.samples)
     session.commit()
-    return dataset, len(payload.samples)
+    return dataset, accepted
 
 
 def publish_dataset(session: Session, dataset_id: str) -> Dataset:

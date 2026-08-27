@@ -1,10 +1,13 @@
 from __future__ import annotations
 
+import logging
 from typing import Any
 
 from fastapi import FastAPI, Request
 from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
+
+logger = logging.getLogger(__name__)
 
 
 class DomainError(Exception):
@@ -79,4 +82,21 @@ def install_error_handlers(app: FastAPI) -> None:
             code="VALIDATION_ERROR",
             message="Request validation failed.",
             details={"errors": errors},
+        )
+
+    @app.exception_handler(Exception)
+    async def unexpected_error_handler(request: Request, exc: Exception) -> JSONResponse:
+        logger.exception(
+            "api.request.failed",
+            exc_info=exc,
+            extra={
+                "event": "api.request.failed",
+                "request_id": getattr(request.state, "request_id", "unknown"),
+            },
+        )
+        return _error_response(
+            request,
+            status_code=500,
+            code="INTERNAL_ERROR",
+            message="The server could not complete the request.",
         )

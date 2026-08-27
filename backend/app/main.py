@@ -41,6 +41,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             404: {"model": ErrorResponse, "description": "Resource not found"},
             409: {"model": ErrorResponse, "description": "Domain state conflict"},
             422: {"model": ErrorResponse, "description": "Request validation failed"},
+            500: {"model": ErrorResponse, "description": "Unexpected server error"},
         },
     )
     application.state.settings = resolved_settings
