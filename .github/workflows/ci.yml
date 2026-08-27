@@ -26,10 +26,13 @@ jobs:
           cache-dependency-glob: backend/uv.lock
       - name: Install backend development dependencies
         run: uv sync --project backend --extra dev --frozen
-      - name: Lint backend and repository scripts
-        run: uv run --project backend ruff check --config backend/pyproject.toml backend/app tests/backend scripts
-      - name: Run backend tests
-        run: uv run --project backend pytest -c backend/pyproject.toml tests/backend -q
+      - name: Lint backend, tests, and repository scripts
+        run: uv run --project backend ruff check --config backend/pyproject.toml backend/app tests scripts
+      - name: Run backend, evaluation, and fixture acceptance gate
+        run: >-
+          uv run --project backend pytest -c backend/pyproject.toml
+          tests/backend tests/evaluation -q
+          --cov=app --cov-branch --cov-report=term-missing --cov-fail-under=85
 
   frontend:
     name: Frontend typecheck, tests, and build
