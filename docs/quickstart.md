@@ -213,6 +213,8 @@ VITE_API_BASE_URL=http://localhost:8000/api/v1
 
 ## 9. 运行测试和质量门禁
 
+本轮可见按钮、写入 API、mock/API 模式边界和剩余风险的回归记录见 [`qa/wor-52-functional-acceptance.md`](qa/wor-52-functional-acceptance.md)。
+
 后端、评测、fixture 和覆盖率：
 
 ```bash
