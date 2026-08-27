@@ -1,8 +1,11 @@
-import { render, screen, within } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../frontend/src/App';
+import { apiClient } from '../../frontend/src/api/client';
+import { datasets, evaluationTasks } from '../../frontend/src/api/fixtures';
+import type { Dataset, EvaluationTask } from '../../frontend/src/types';
 
 function renderRoute(path: string) {
   return render(
@@ -10,6 +13,16 @@ function renderRoute(path: string) {
       <AppRoutes />
     </MemoryRouter>,
   );
+}
+
+function deferred<T>() {
+  let resolve!: (value: T) => void;
+  let reject!: (reason?: unknown) => void;
+  const promise = new Promise<T>((resolvePromise, rejectPromise) => {
+    resolve = resolvePromise;
+    reject = rejectPromise;
+  });
+  return { promise, resolve, reject };
 }
 
 describe('RAGOps MVP interaction loops', () => {
@@ -46,6 +59,41 @@ describe('RAGOps MVP interaction loops', () => {
     expect(await screen.findByText('已归档')).toBeInTheDocument();
   });
 
+  it('refreshes datasets without hiding stale data and offers a retry after failure', async () => {
+    const user = userEvent.setup();
+    renderRoute('/projects/demo/datasets');
+    await screen.findByText('客服黄金问答集');
+
+    const failedRefresh = deferred<Dataset[]>();
+    const refreshedDatasets: Dataset[] = [
+      { ...datasets[0], id: 'ds-refreshed', name: '刷新后的数据集' },
+      ...datasets,
+    ];
+    const listSpy = vi.spyOn(apiClient, 'listDatasets')
+      .mockReturnValueOnce(failedRefresh.promise)
+      .mockResolvedValueOnce(refreshedDatasets);
+
+    const refreshButton = screen.getByRole('button', { name: '刷新数据集' });
+    await user.click(refreshButton);
+
+    expect(refreshButton).toBeDisabled();
+    expect(refreshButton).toHaveTextContent('刷新中');
+    expect(screen.getByText('客服黄金问答集')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('当前列表与筛选保持可用');
+
+    failedRefresh.reject(new Error('数据集服务暂时不可用'));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('数据集刷新失败');
+    expect(alert).toHaveTextContent('当前仍显示上次成功加载的数据');
+    expect(screen.getByText('客服黄金问答集')).toBeInTheDocument();
+
+    await user.click(within(alert).getByRole('button', { name: '重试刷新' }));
+    expect(await screen.findByText('刷新后的数据集')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Mock 数据集列表已刷新');
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(listSpy).toHaveBeenCalledTimes(2);
+  });
+
   it('creates a running mock evaluation and filters by status', async () => {
     const user = userEvent.setup();
     renderRoute('/projects/demo/evaluations?state=empty');
@@ -59,6 +107,41 @@ describe('RAGOps MVP interaction loops', () => {
     await user.click(screen.getByRole('button', { name: '筛选' }));
     await user.selectOptions(screen.getByRole('combobox', { name: '按状态筛选评测任务' }), 'completed');
     expect(await screen.findByText('未找到匹配任务')).toBeInTheDocument();
+  });
+
+  it('refreshes task status while preserving the table and retries a failed read', async () => {
+    const user = userEvent.setup();
+    renderRoute('/projects/demo/evaluations');
+    await screen.findByText('Rerank 参数 A/B 基线');
+
+    const failedRefresh = deferred<EvaluationTask[]>();
+    const refreshedTasks: EvaluationTask[] = evaluationTasks.map((task) => task.id === 'eval-20260825'
+      ? { ...task, status: 'completed', progress: 100, completedAt: '2026-08-27T13:00:00+08:00', score: 90.2 }
+      : task);
+    const listSpy = vi.spyOn(apiClient, 'listEvaluationTasks')
+      .mockReturnValueOnce(failedRefresh.promise)
+      .mockResolvedValueOnce(refreshedTasks);
+
+    const refreshButton = screen.getByRole('button', { name: '刷新任务状态' });
+    await user.click(refreshButton);
+
+    expect(refreshButton).toBeDisabled();
+    expect(screen.getByText('Rerank 参数 A/B 基线')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('当前列表与筛选保持可用');
+
+    failedRefresh.reject(new Error('任务状态读取超时'));
+    const alert = await screen.findByRole('alert');
+    expect(alert).toHaveTextContent('任务状态刷新失败');
+    expect(alert).toHaveTextContent('当前仍显示上次成功加载的数据');
+    expect(screen.getByText('Rerank 参数 A/B 基线')).toBeInTheDocument();
+
+    await user.click(within(alert).getByRole('button', { name: '重试刷新' }));
+    const refreshedRow = (await screen.findByText('Rerank 参数 A/B 基线')).closest('tr');
+    expect(refreshedRow).not.toBeNull();
+    expect(within(refreshedRow!).getByText('已完成')).toBeInTheDocument();
+    expect(screen.getByRole('status')).toHaveTextContent('Mock 任务状态已刷新');
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(listSpy).toHaveBeenCalledTimes(2);
   });
 
   it('opens trend details and reports refresh feedback', async () => {

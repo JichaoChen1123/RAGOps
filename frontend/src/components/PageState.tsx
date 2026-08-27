@@ -54,3 +54,29 @@ export function PartialDataBanner({ message }: { message?: string }) {
     </div>
   );
 }
+
+export function RefreshErrorBanner({
+  subject,
+  message,
+  onRetry,
+  retrying,
+}: {
+  subject: string;
+  message: string;
+  onRetry: () => void;
+  retrying: boolean;
+}) {
+  return (
+    <div className="refresh-error" role="alert">
+      <AlertTriangle size={16} />
+      <span>
+        <strong>{subject}刷新失败</strong>
+        <small>{message}。当前仍显示上次成功加载的数据。</small>
+      </span>
+      <button className="button button-small button-secondary" type="button" onClick={onRetry} disabled={retrying}>
+        <RefreshCw className={retrying ? 'icon-spin' : undefined} size={14} />
+        {retrying ? '重试中' : '重试刷新'}
+      </button>
+    </div>
+  );
+}

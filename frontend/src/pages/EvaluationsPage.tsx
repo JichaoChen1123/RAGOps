@@ -1,11 +1,11 @@
-import { ArrowRight, Filter, Play, Search } from 'lucide-react';
+import { ArrowRight, Filter, Play, RefreshCw, Search } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router-dom';
 import { apiClient, apiMode } from '../api/client';
 import { datasets as mockDatasets } from '../api/fixtures';
 import { Dialog, Toast } from '../components/Interaction';
 import { PageIntro, Panel } from '../components/Panel';
-import { EmptyState, ErrorState, LoadingState, PartialDataBanner } from '../components/PageState';
+import { EmptyState, ErrorState, LoadingState, PartialDataBanner, RefreshErrorBanner } from '../components/PageState';
 import { StatusBadge } from '../components/StatusBadge';
 import type { WorkspaceOutletContext } from '../components/WorkspaceShell';
 import { useApiResource } from '../hooks/useApiResource';
@@ -33,6 +33,8 @@ export function EvaluationsPage() {
   const [localTasks, setLocalTasks] = useState<DisplayTask[] | null>(null);
   const [availableDatasets, setAvailableDatasets] = useState<Dataset[]>(apiMode === 'mock' ? mockDatasets : []);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState({
     datasetId: apiMode === 'mock' ? mockDatasets[0]?.id ?? '' : '',
@@ -70,6 +72,21 @@ export function EvaluationsPage() {
 
   if (state.status === 'loading') return <LoadingState label="正在同步评测任务" />;
   if (state.status === 'error') return <ErrorState message={state.message} onRetry={retry} />;
+
+  const refreshTasks = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const refreshed = await apiClient.listEvaluationTasks(projectId);
+      setLocalTasks(refreshed);
+      setFeedback(apiMode === 'mock' ? 'Mock 任务状态已刷新' : '评测任务状态已从 API 刷新');
+    } catch (error) {
+      setRefreshError(error instanceof Error ? error.message : '发生未知错误，请稍后重试');
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const createTask = async (event: FormEvent) => {
     event.preventDefault();
@@ -120,6 +137,9 @@ export function EvaluationsPage() {
         action={(
           <div className="toolbar">
             <label className="search-box"><Search size={15} /><input aria-label="搜索评测任务" placeholder="搜索任务或数据集" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+            <button className="button button-quiet" type="button" onClick={() => void refreshTasks()} disabled={refreshing} aria-busy={refreshing}>
+              <RefreshCw className={refreshing ? 'icon-spin' : undefined} size={15} />{refreshing ? '刷新中' : '刷新任务状态'}
+            </button>
             <div className="menu-anchor">
               <button className={`button button-quiet ${statusFilter !== 'all' ? 'filter-active' : ''}`} type="button" aria-expanded={filterOpen} onClick={() => setFilterOpen((value) => !value)}><Filter size={15} />筛选{statusFilter !== 'all' && ' · 1'}</button>
               {filterOpen && <div className="filter-popover"><label>任务状态<select aria-label="按状态筛选评测任务" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as TaskFilter)}>{taskStatuses.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><button type="button" onClick={() => { setStatusFilter('all'); setFilterOpen(false); }}>清除筛选</button></div>}
@@ -127,6 +147,8 @@ export function EvaluationsPage() {
           </div>
         )}
       >
+        {refreshing && <div className="refresh-progress" role="status" aria-live="polite">正在刷新任务状态，当前列表与筛选保持可用。</div>}
+        {refreshError && <RefreshErrorBanner subject="任务状态" message={refreshError} onRetry={() => void refreshTasks()} retrying={refreshing} />}
         {allTasks.length === 0 ? (
           <EmptyState title="还没有评测任务" description="选择已就绪的数据集、模型与 Prompt 版本，建立第一个质量基线。" action={<button className="button button-primary" type="button" onClick={() => setCreateOpen(true)}><Play size={15} />新建首个任务</button>} />
         ) : tasks.length === 0 ? (

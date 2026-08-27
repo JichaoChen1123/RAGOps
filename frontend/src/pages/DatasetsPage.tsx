@@ -1,10 +1,10 @@
-import { Archive, Copy, Eye, FilePlus2, Filter, MoreHorizontal, Search, Upload } from 'lucide-react';
+import { Archive, Copy, Eye, FilePlus2, Filter, MoreHorizontal, RefreshCw, Search, Upload } from 'lucide-react';
 import { useEffect, useMemo, useState, type FormEvent } from 'react';
 import { useOutletContext, useParams } from 'react-router-dom';
 import { apiClient, apiMode } from '../api/client';
 import { Dialog, Toast } from '../components/Interaction';
 import { PageIntro, Panel } from '../components/Panel';
-import { EmptyState, ErrorState, LoadingState, PartialDataBanner } from '../components/PageState';
+import { EmptyState, ErrorState, LoadingState, PartialDataBanner, RefreshErrorBanner } from '../components/PageState';
 import { StatusBadge } from '../components/StatusBadge';
 import type { WorkspaceOutletContext } from '../components/WorkspaceShell';
 import { useApiResource } from '../hooks/useApiResource';
@@ -35,6 +35,8 @@ export function DatasetsPage() {
   const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
   const [localDatasets, setLocalDatasets] = useState<DisplayDataset[] | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshError, setRefreshError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [draft, setDraft] = useState({ name: '', description: '', owner: '当前用户' });
   const { state, retry } = useApiResource(
@@ -56,6 +58,21 @@ export function DatasetsPage() {
 
   if (state.status === 'loading') return <LoadingState label="正在载入数据集" />;
   if (state.status === 'error') return <ErrorState message={state.message} onRetry={retry} />;
+
+  const refreshDatasets = async () => {
+    if (refreshing) return;
+    setRefreshing(true);
+    setRefreshError(null);
+    try {
+      const refreshed = await apiClient.listDatasets(projectId);
+      setLocalDatasets(refreshed);
+      setFeedback(apiMode === 'mock' ? 'Mock 数据集列表已刷新' : '数据集列表已从 API 刷新');
+    } catch (error) {
+      setRefreshError(error instanceof Error ? error.message : '发生未知错误，请稍后重试');
+    } finally {
+      setRefreshing(false);
+    }
+  };
 
   const ensureMockArchive = () => {
     if (apiMode === 'mock') return true;
@@ -154,6 +171,9 @@ export function DatasetsPage() {
         action={(
           <div className="toolbar">
             <label className="search-box"><Search size={15} /><input aria-label="搜索数据集" placeholder="搜索名称" value={query} onChange={(event) => setQuery(event.target.value)} /></label>
+            <button className="button button-quiet" type="button" onClick={() => void refreshDatasets()} disabled={refreshing} aria-busy={refreshing}>
+              <RefreshCw className={refreshing ? 'icon-spin' : undefined} size={15} />{refreshing ? '刷新中' : '刷新数据集'}
+            </button>
             <div className="menu-anchor">
               <button className={`button button-quiet ${statusFilter !== 'all' ? 'filter-active' : ''}`} type="button" aria-expanded={filterOpen} onClick={() => setFilterOpen((value) => !value)}><Filter size={15} />筛选{statusFilter !== 'all' && ' · 1'}</button>
               {filterOpen && <div className="filter-popover"><label>数据集状态<select aria-label="按状态筛选数据集" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as DatasetFilter)}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><button type="button" onClick={() => { setStatusFilter('all'); setFilterOpen(false); }}>清除筛选</button></div>}
@@ -161,6 +181,8 @@ export function DatasetsPage() {
           </div>
         )}
       >
+        {refreshing && <div className="refresh-progress" role="status" aria-live="polite">正在刷新数据集，当前列表与筛选保持可用。</div>}
+        {refreshError && <RefreshErrorBanner subject="数据集" message={refreshError} onRetry={() => void refreshDatasets()} retrying={refreshing} />}
         {datasets.length === 0 ? (
           <EmptyState title="还没有数据集" description="导入 CSV / JSONL，或创建一个空数据集开始维护评测样本。" action={<button className="button button-primary" type="button" onClick={openImport}><Upload size={15} />导入首个数据集</button>} />
         ) : filtered.length === 0 ? (
