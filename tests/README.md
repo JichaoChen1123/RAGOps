@@ -37,3 +37,11 @@ pwsh -File tests/fixtures/validate-fixtures.ps1
 ```
 
 该脚本校验基线数量、ID 唯一性、rank 连续性、citation 引用和关键指标 oracle。它不替代后续 JSON Schema/OpenAPI 契约测试。
+
+WOR-49 可见交互与模式边界契约自检：
+
+```powershell
+pwsh -File tests/acceptance/validate-wor-49.ps1
+```
+
+该命令只验证验收资产、Mock/API 双模式期望、写操作映射和 README 说明完整，不代表应用实现已经通过。实现进入仓库后，仍需执行 `docs/qa/wor-49-visible-interactions.md` 中列出的前端、后端与集成门禁。

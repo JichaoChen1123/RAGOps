@@ -1,0 +1,227 @@
+{
+  "schema_version": "1.0",
+  "issue": "WOR-49",
+  "policy": {
+    "silent_noop_allowed": false,
+    "api_silent_mock_fallback_allowed": false
+  },
+  "fixture": {
+    "dataset_name": "WOR-49 可见交互验收集",
+    "sample_file": "examples/eval-samples/valid-samples.jsonl",
+    "expected_sample_count": 6,
+    "review_sample_id": "rag-retrieval-miss-001",
+    "copy_text": "企业版审计日志默认保留 180 天。"
+  },
+  "interactions": [
+    {
+      "id": "W49-UI-001",
+      "priority": "P0",
+      "surface": "数据集管理",
+      "control": "新建数据集",
+      "modes": ["mock", "api"],
+      "steps": ["点击新建数据集", "输入 fixture.dataset_name", "确认创建"],
+      "expected_by_mode": {
+        "mock": "弹窗关闭，列表新增一条 draft 数据集并显示成功反馈；刷新浏览器后明确说明 mock 数据会重置。",
+        "api": "发送 createDataset 写请求；201 后列表出现服务端返回记录，失败时保留输入并显示可重试错误。"
+      },
+      "api_operation": "createDataset",
+      "automation_target": "frontend:dataset create dialog and success/error feedback; backend:POST validation and persistence"
+    },
+    {
+      "id": "W49-UI-002",
+      "priority": "P0",
+      "surface": "数据集管理",
+      "control": "导入样例/导入首个数据集",
+      "modes": ["mock", "api"],
+      "steps": ["点击导入样例", "选择 fixture.sample_file", "确认导入"],
+      "expected_by_mode": {
+        "mock": "显示文件名、校验进度和 accepted=6/rejected=0，列表样本数更新；不上传外部服务。",
+        "api": "向选定数据集发送 importDatasetSamples；成功显示 accepted/rejected，校验失败定位到行和字段。"
+      },
+      "api_operation": "importDatasetSamples",
+      "automation_target": "frontend:file selection and import summary; backend:atomic import and UTF-8 preservation"
+    },
+    {
+      "id": "W49-UI-003",
+      "priority": "P0",
+      "surface": "数据集管理",
+      "control": "筛选",
+      "modes": ["mock", "api"],
+      "steps": ["点击筛选", "选择 ready", "应用", "清除筛选"],
+      "expected_by_mode": {
+        "mock": "筛选面板可见，结果和计数同步变化，清除后恢复完整 fixture。",
+        "api": "筛选面板可见；请求参数与 UI 状态一致，空结果显示可清除的空态。"
+      },
+      "api_operation": "listDatasets",
+      "automation_target": "frontend:filter popover, query state, filtered and empty states"
+    },
+    {
+      "id": "W49-UI-004",
+      "priority": "P0",
+      "surface": "数据集管理",
+      "control": "刷新",
+      "modes": ["mock", "api"],
+      "steps": ["点击刷新", "观察加载反馈和更新时间"],
+      "expected_by_mode": {
+        "mock": "重新读取内置 fixture，按钮在加载时禁用且完成后显示刷新成功。",
+        "api": "重新调用 listDatasets；保留当前筛选，失败时旧数据仍可见并提供重试。"
+      },
+      "api_operation": "listDatasets",
+      "automation_target": "frontend:loading, stale-data error and retry behavior"
+    },
+    {
+      "id": "W49-UI-005",
+      "priority": "P0",
+      "surface": "评测任务",
+      "control": "新建评测任务/新建首个任务",
+      "modes": ["mock", "api"],
+      "steps": ["点击新建评测任务", "选择验收数据集及模型/Prompt 版本", "提交"],
+      "expected_by_mode": {
+        "mock": "弹窗展示固定可选项，提交后新增 queued 任务并以确定性状态反馈，不暗示真实模型已运行。",
+        "api": "发送 createEvaluation；202 后按返回 task id 读取状态，重复提交不会产生无提示的重复任务。"
+      },
+      "api_operation": "createEvaluation",
+      "automation_target": "frontend:create form and queued feedback; backend:202, idempotency and state persistence"
+    },
+    {
+      "id": "W49-UI-006",
+      "priority": "P0",
+      "surface": "评测任务",
+      "control": "筛选",
+      "modes": ["mock", "api"],
+      "steps": ["点击筛选", "选择 completed", "应用", "清除筛选"],
+      "expected_by_mode": {
+        "mock": "只显示完成任务，计数与结果一致，清除后恢复。",
+        "api": "筛选条件映射为 listEvaluations 参数；未知条件不发送，空结果可一键清除。"
+      },
+      "api_operation": "listEvaluations",
+      "automation_target": "frontend:task filter semantics and empty state"
+    },
+    {
+      "id": "W49-UI-007",
+      "priority": "P0",
+      "surface": "评测任务",
+      "control": "刷新/状态读取",
+      "modes": ["mock", "api"],
+      "steps": ["对 queued/running 任务点击刷新", "观察状态与进度"],
+      "expected_by_mode": {
+        "mock": "使用确定性快照推进或保持状态，并标注为演示状态；进度不回退。",
+        "api": "调用 getEvaluation 或重新读取列表；状态只按契约流转，终态不会回退。"
+      },
+      "api_operation": "getEvaluation",
+      "automation_target": "frontend:refresh and monotonic progress; backend:state read contract"
+    },
+    {
+      "id": "W49-UI-008",
+      "priority": "P0",
+      "surface": "评测报告",
+      "control": "导出报告",
+      "modes": ["mock", "api"],
+      "steps": ["点击导出报告", "确认下载 JSON"],
+      "expected_by_mode": {
+        "mock": "基于当前 mock 报告生成非空 JSON 下载，文件名含 task id。",
+        "api": "调用 exportReport 读取结构化 JSON bundle；成功下载与页面 task id 一致的数据，失败显示错误且不生成空文件。"
+      },
+      "api_operation": "exportReport",
+      "automation_target": "frontend:download content/name/error; backend:JSON schema, report identity and review status"
+    },
+    {
+      "id": "W49-UI-009",
+      "priority": "P1",
+      "surface": "评测报告",
+      "control": "对比版本",
+      "modes": ["mock", "api"],
+      "steps": ["点击对比版本"],
+      "expected_by_mode": {
+        "mock": "打开可关闭的对比入口并展示 fixture 基线；若仅占位则按钮禁用且就地说明下一阶段。",
+        "api": "有契约时打开可选版本入口；无比较 API 时明确提示未开放，不静默回退到 mock。"
+      },
+      "api_operation": null,
+      "automation_target": "frontend:dialog or explicit disabled reason in both modes"
+    },
+    {
+      "id": "W49-UI-010",
+      "priority": "P0",
+      "surface": "评测报告",
+      "control": "全部/待复核/已确认筛选",
+      "modes": ["mock", "api"],
+      "steps": ["依次选择待复核和已确认", "返回全部"],
+      "expected_by_mode": {
+        "mock": "样本集合与标签计数一致，空分组展示空态，当前选项可感知。",
+        "api": "筛选参数或服务端结果与 reviewStatus 一致；返回全部后恢复完整列表。"
+      },
+      "api_operation": "listEvaluationSamples",
+      "automation_target": "frontend:review filter, counts, active state and empty state"
+    },
+    {
+      "id": "W49-UI-011",
+      "priority": "P0",
+      "surface": "样本诊断",
+      "control": "复制模型回答",
+      "modes": ["mock", "api"],
+      "steps": ["点击复制模型回答", "读取剪贴板或替身"],
+      "expected_by_mode": {
+        "mock": "写入完整原文并显示复制成功；Clipboard API 拒绝时显示失败提示。",
+        "api": "行为与 mock 一致，不因数据来源改变；不复制截断后的展示文本。"
+      },
+      "api_operation": null,
+      "automation_target": "frontend:clipboard success, rejection and exact text"
+    },
+    {
+      "id": "W49-UI-012",
+      "priority": "P0",
+      "surface": "样本诊断",
+      "control": "打开源文档",
+      "modes": ["mock", "api"],
+      "steps": ["选择检索文档", "点击打开源文档"],
+      "expected_by_mode": {
+        "mock": "fixture 有安全 URL 时新标签打开；无 URL 时按钮禁用并说明样例未提供源链接。",
+        "api": "仅允许 http/https 安全地址；缺失或非法地址明确禁用，不拼接猜测 URL。"
+      },
+      "api_operation": null,
+      "automation_target": "frontend:safe link, noopener/noreferrer and missing-link boundary"
+    },
+    {
+      "id": "W49-UI-013",
+      "priority": "P0",
+      "surface": "样本诊断",
+      "control": "确认故障归因",
+      "modes": ["mock", "api"],
+      "steps": ["点击确认故障归因", "填写可选备注", "确认"],
+      "expected_by_mode": {
+        "mock": "状态变为 confirmed 并显示成功反馈；返回报告后筛选与徽标同步。",
+        "api": "发送 updateSampleReview(status=confirmed)；成功使用服务端结果更新，409 时提示冲突并刷新。"
+      },
+      "api_operation": "updateSampleReview",
+      "automation_target": "frontend:optimistic/error/conflict states; backend:review persistence and validation"
+    },
+    {
+      "id": "W49-UI-014",
+      "priority": "P0",
+      "surface": "样本诊断",
+      "control": "排除诊断",
+      "modes": ["mock", "api"],
+      "steps": ["点击排除诊断", "确认"],
+      "expected_by_mode": {
+        "mock": "状态变为 dismissed 并显示成功反馈。",
+        "api": "发送 updateSampleReview(review_status=dismissed)；成功使用服务端结果更新，错误时保留原状态并提示。"
+      },
+      "api_operation": "updateSampleReview",
+      "automation_target": "frontend:confirmation and error rollback; backend:review enum validation and persistence"
+    },
+    {
+      "id": "W49-UI-015",
+      "priority": "P1",
+      "surface": "全局导航",
+      "control": "使用帮助",
+      "modes": ["mock", "api"],
+      "steps": ["点击使用帮助", "查看模式说明", "关闭"],
+      "expected_by_mode": {
+        "mock": "打开帮助面板，明确 fixture、重置行为和非生产边界。",
+        "api": "打开帮助面板，说明 API base URL、错误反馈与不自动回退 mock。"
+      },
+      "api_operation": null,
+      "automation_target": "frontend:accessible help dialog and mode-specific copy"
+    }
+  ]
+}
