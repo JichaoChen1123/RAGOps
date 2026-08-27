@@ -62,7 +62,11 @@ SINGLE_INVALID_CASES = [case for case in INVALID_CASES if "batch_id" not in case
 def _create_dataset(client, name: str) -> str:
     response = client.post(
         "/api/v1/datasets",
-        json={"name": name, "description": "Synthetic QA acceptance fixture."},
+        json={
+            "name": name,
+            "description": "Synthetic QA acceptance fixture.",
+            "owner": "backend-tests",
+        },
     )
     assert response.status_code == 201
     return response.json()["id"]
@@ -142,7 +146,8 @@ def test_sanitized_fixtures_complete_the_real_api_evaluation_loop(client) -> Non
     report = client.get(f"/api/v1/evaluation-jobs/{job_id}/report")
 
     assert job.status_code == 200
-    assert job.json()["status"] == "succeeded"
+    assert job.json()["status"] == "completed"
+    assert job.json()["outcome"] == "succeeded"
     assert job.json()["progress"] == 1.0
     assert job.json()["queued_count"] == 0
     assert job.json()["running_count"] == 0
@@ -177,7 +182,8 @@ def test_sanitized_fixtures_complete_the_real_api_evaluation_loop(client) -> Non
                 assert SUPPORTED_DIAGNOSIS_ORACLE[expected_label] in positive_rule_ids
 
     assert report.status_code == 200
-    assert report.json()["status"] == "succeeded"
+    assert report.json()["status"] == "completed"
+    assert report.json()["outcome"] == "succeeded"
     assert report.json()["summary"] == {
         "total_count": 6,
         "succeeded_count": 6,

@@ -26,7 +26,10 @@ def test_import_publish_and_read_utf8_sample(client, sample_payload) -> None:
 
 
 def test_duplicate_batch_is_rejected_atomically(client, sample_payload) -> None:
-    created = client.post("/api/v1/datasets", json={"name": "duplicates"})
+    created = client.post(
+        "/api/v1/datasets",
+        json={"name": "duplicates", "owner": "backend-tests"},
+    )
     dataset_id = created.json()["id"]
     duplicate = dict(sample_payload)
 
@@ -42,7 +45,10 @@ def test_duplicate_batch_is_rejected_atomically(client, sample_payload) -> None:
 
 
 def test_empty_publish_and_published_mutation_are_conflicts(client, sample_payload) -> None:
-    empty = client.post("/api/v1/datasets", json={"name": "empty-dataset"})
+    empty = client.post(
+        "/api/v1/datasets",
+        json={"name": "empty-dataset", "owner": "backend-tests"},
+    )
     empty_publish = client.post(f"/api/v1/datasets/{empty.json()['id']}:publish")
     dataset_id = create_published_dataset(client, [sample_payload])
     mutate = client.post(

@@ -5,7 +5,7 @@ import json
 import logging
 
 from fastapi import status
-from sqlalchemy import select
+from sqlalchemy import or_, select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.errors import DomainError
@@ -26,15 +26,16 @@ from app.schemas.jobs import (
     EvaluationJobResponse,
     EvaluationReportResponse,
     EvaluationSampleResponse,
+    ReportExportResponse,
+    SampleReviewUpdate,
 )
 
 logger = logging.getLogger(__name__)
 
 ALLOWED_TRANSITIONS: dict[str, set[str]] = {
     "queued": {"running", "failed", "cancelled"},
-    "running": {"succeeded", "partial_failed", "failed", "cancelled"},
-    "succeeded": set(),
-    "partial_failed": set(),
+    "running": {"completed", "failed", "cancelled"},
+    "completed": set(),
     "failed": set(),
     "cancelled": set(),
 }
@@ -65,10 +66,19 @@ def derive_terminal_status(*, total: int, succeeded: int, failed: int) -> str:
     if total <= 0 or succeeded + failed != total:
         raise ValueError("all samples must be terminal before deriving job status")
     if succeeded == total:
-        return "succeeded"
+        return "completed"
     if failed == total:
         return "failed"
-    return "partial_failed"
+    return "completed"
+
+
+def derive_job_outcome(*, total: int, succeeded: int, failed: int) -> str:
+    terminal_status = derive_terminal_status(total=total, succeeded=succeeded, failed=failed)
+    if terminal_status == "failed":
+        return "failed"
+    if failed:
+        return "partial_failed"
+    return "succeeded"
 
 
 def create_job(
@@ -117,8 +127,11 @@ def create_job(
     )
     job = EvaluationJob(
         dataset_id=dataset.id,
+        name=payload.name or f"{dataset.name} evaluation",
         status="queued",
-        config_version=payload.config_version,
+        config_version=payload.resolved_config_version,
+        model_version=payload.model_version,
+        prompt_version=payload.prompt_version,
         metric_config=[metric.model_dump(mode="json") for metric in payload.metrics],
         total_count=len(samples),
         queued_count=len(samples),
@@ -159,8 +172,12 @@ def job_to_response(job: EvaluationJob) -> EvaluationJobResponse:
     return EvaluationJobResponse(
         id=job.id,
         dataset_id=job.dataset_id,
+        name=job.name,
         status=job.status,
+        outcome=job.outcome,
         config_version=job.config_version,
+        model_version=job.model_version,
+        prompt_version=job.prompt_version,
         metric_config=job.metric_config,
         total_count=job.total_count,
         queued_count=job.queued_count,
@@ -213,9 +230,14 @@ def execute_job(
             failed=job.failed_count,
         )
         transition_job(job, terminal_status)
+        job.outcome = derive_job_outcome(
+            total=job.total_count,
+            succeeded=job.succeeded_count,
+            failed=job.failed_count,
+        )
         job.finished_at = utc_now()
         job.progress = 1.0
-        if terminal_status in {"succeeded", "partial_failed"}:
+        if terminal_status == "completed":
             sample_metric_results = list(
                 session.scalars(
                     select(EvaluationJobSample.metric_results)
@@ -226,6 +248,7 @@ def execute_job(
             report = EvaluationReport(
                 job_id=job.id,
                 status=terminal_status,
+                outcome=job.outcome,
                 total_count=job.total_count,
                 succeeded_count=job.succeeded_count,
                 failed_count=job.failed_count,
@@ -288,6 +311,24 @@ def _execute_sample(
         session.commit()
 
 
+def _sample_to_response(row: EvaluationJobSample) -> EvaluationSampleResponse:
+    return EvaluationSampleResponse(
+        id=row.id,
+        sample_id=row.sample.external_id,
+        question=row.sample.question,
+        status=row.status,
+        answer=row.answer,
+        retrieval_results=row.retrieval_results,
+        metric_results=row.metric_results,
+        diagnoses=row.diagnoses,
+        review_status=row.review_status,
+        reviewed_at=row.reviewed_at,
+        latency_ms=row.latency_ms,
+        failure_code=row.failure_code,
+        failure_message=row.failure_message,
+    )
+
+
 def list_job_samples(session: Session, job_id: str) -> list[EvaluationSampleResponse]:
     get_job(session, job_id)
     rows = list(
@@ -298,22 +339,47 @@ def list_job_samples(session: Session, job_id: str) -> list[EvaluationSampleResp
             .order_by(EvaluationJobSample.created_at)
         )
     )
-    return [
-        EvaluationSampleResponse(
-            id=row.id,
-            sample_id=row.sample.external_id,
-            question=row.sample.question,
-            status=row.status,
-            answer=row.answer,
-            retrieval_results=row.retrieval_results,
-            metric_results=row.metric_results,
-            diagnoses=row.diagnoses,
-            latency_ms=row.latency_ms,
-            failure_code=row.failure_code,
-            failure_message=row.failure_message,
+    return [_sample_to_response(row) for row in rows]
+
+
+def update_sample_review(
+    session: Session,
+    job_id: str,
+    sample_id: str,
+    payload: SampleReviewUpdate,
+) -> EvaluationSampleResponse:
+    job = get_job(session, job_id)
+    if job.status != "completed":
+        raise DomainError(
+            "REVIEW_NOT_AVAILABLE",
+            "Sample review is only available after evaluation completes.",
+            status_code=status.HTTP_409_CONFLICT,
+            details={"job_id": job_id, "job_status": job.status},
+            retryable=job.status in {"queued", "running"},
         )
-        for row in rows
-    ]
+    row = session.scalar(
+        select(EvaluationJobSample)
+        .join(EvaluationJobSample.sample)
+        .options(joinedload(EvaluationJobSample.sample))
+        .where(
+            EvaluationJobSample.job_id == job_id,
+            or_(
+                EvaluationJobSample.id == sample_id,
+                DatasetSample.external_id == sample_id,
+            ),
+        )
+    )
+    if row is None:
+        raise DomainError(
+            "RESOURCE_NOT_FOUND",
+            "Evaluation sample not found.",
+            status_code=status.HTTP_404_NOT_FOUND,
+            details={"job_id": job_id, "sample_id": sample_id},
+        )
+    row.review_status = payload.review_status.value
+    row.reviewed_at = None if payload.review_status.value == "pending" else utc_now()
+    session.commit()
+    return _sample_to_response(row)
 
 
 def get_report(session: Session, job_id: str) -> EvaluationReportResponse:
@@ -331,6 +397,7 @@ def get_report(session: Session, job_id: str) -> EvaluationReportResponse:
         id=report.id,
         job_id=report.job_id,
         status=report.status,
+        outcome=report.outcome,
         generated_at=report.generated_at,
         summary={
             "total_count": report.total_count,
@@ -341,5 +408,14 @@ def get_report(session: Session, job_id: str) -> EvaluationReportResponse:
         links={
             "job": f"/api/v1/evaluation-jobs/{job_id}",
             "samples": f"/api/v1/evaluation-jobs/{job_id}/samples",
+            "export": f"/api/v1/evaluation-jobs/{job_id}/report/export",
         },
+    )
+
+
+def export_report(session: Session, job_id: str) -> ReportExportResponse:
+    return ReportExportResponse(
+        exported_at=utc_now(),
+        report=get_report(session, job_id),
+        samples=list_job_samples(session, job_id),
     )
