@@ -2,11 +2,13 @@
 
 React + TypeScript + Vite 实现的 RAGOps 工程工作台。默认使用内置脱敏 fixture，可演示“评测任务 → 报告 → 样本诊断 → 检索与引用证据”完整链路。
 
+完整的克隆、Docker 启动、环境变量和后端联调用法见 [`../docs/quickstart.md`](../docs/quickstart.md)。
+
 ## 本地运行
 
 ```bash
-npm install
-npm run dev
+npm --prefix frontend ci
+npm --prefix frontend run dev
 ```
 
 打开 `http://localhost:5173`。默认入口会重定向到演示项目概览。
@@ -29,7 +31,7 @@ VITE_API_BASE_URL=http://localhost:8000/api/v1
 ## 质量检查
 
 ```bash
-npm run typecheck
-npm test
-npm run build
+npm --prefix frontend run typecheck
+npm --prefix frontend test
+npm --prefix frontend run build
 ```
