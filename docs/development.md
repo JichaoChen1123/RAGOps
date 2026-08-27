@@ -1,5 +1,23 @@
 # 本地开发与工程交付
 
+## 从零克隆
+
+如果你是第一次使用本仓库，先阅读 [克隆、配置与使用教程](quickstart.md)。该教程覆盖 Git clone、Docker 一键启动、环境变量、本地后端/前端启动、测试命令和常见问题。
+
+最短路径：
+
+```bash
+git clone https://github.com/JichaoChen1123/RAGOps.git
+cd RAGOps
+docker compose up --build
+```
+
+启动后访问：
+
+- 前端工作台：<http://localhost:5173>
+- 后端 Swagger UI：<http://localhost:8000/docs>
+- 后端就绪检查：<http://localhost:8000/health/ready>
+
 ## Docker Compose 一键启动
 
 仓库根目录下的唯一启动命令是：

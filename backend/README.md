@@ -6,6 +6,8 @@ This service implements the smallest persistent RAGOps loop:
 
 The local default is SQLite plus a deterministic in-process executor. It computes auditable RAG metrics and evidence-backed MVP diagnoses without an external LLM judge. The execution contract remains isolated so a queue-backed worker can replace local orchestration later.
 
+For full repository setup, Docker startup, environment variables, frontend usage, and troubleshooting, see [`../docs/quickstart.md`](../docs/quickstart.md).
+
 ## Requirements
 
 - Python 3.11 or newer (the target production baseline is Python 3.12)
@@ -16,8 +18,8 @@ The local default is SQLite plus a deterministic in-process executor. It compute
 Run from the repository root:
 
 ```bash
-uv sync --project backend --extra dev
-uv run --project backend pytest tests/backend tests/evaluation -q
+uv sync --project backend --extra dev --frozen
+uv run --project backend pytest -c backend/pyproject.toml tests/backend tests/evaluation -q
 ```
 
 Initialize a persistent local database and start the API:
