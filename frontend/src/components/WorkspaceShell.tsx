@@ -1,6 +1,7 @@
 import {
   Activity,
   BarChart3,
+  Bot,
   Boxes,
   ChevronDown,
   CircleHelp,
@@ -12,6 +13,7 @@ import {
   PanelLeftOpen,
   Search,
   Settings,
+  SlidersHorizontal,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams, useSearchParams } from 'react-router-dom';
@@ -49,6 +51,8 @@ export function WorkspaceShell() {
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
+  const [roadmapOpen, setRoadmapOpen] = useState(false);
+  const [configurationOpen, setConfigurationOpen] = useState(false);
   const [searchQuery, setSearchQuery] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
   const scenario = (searchParams.get('state') as ViewScenario | null) ?? 'normal';
@@ -123,11 +127,27 @@ export function WorkspaceShell() {
           <NavLink title="数据集" to={preserveState(`/projects/${projectId}/datasets`)}><Database size={17} /><span className="nav-label">数据集</span></NavLink>
           <span className="nav-section">评测与诊断</span>
           <NavLink title="评测任务" to={preserveState(`/projects/${projectId}/evaluations`)}><FlaskConical size={17} /><span className="nav-label">评测任务</span><span className="nav-count">3</span></NavLink>
-          <span className="nav-disabled" title="版本对比入口将在后续阶段开放"><GitCompareArrows size={17} /><span className="nav-label">版本对比</span><span>即将推出</span></span>
-          <span className="nav-disabled" title="趋势详情可从项目概览打开"><BarChart3 size={17} /><span className="nav-label">趋势看板</span><span>从概览查看</span></span>
+          <button className="nav-item nav-coming-soon" type="button" aria-label="版本对比，即将推出" onClick={() => setRoadmapOpen(true)}>
+            <GitCompareArrows size={17} />
+            <span className="nav-item-copy"><span className="nav-label">版本对比</span><small>模型 / Prompt 回归</small></span>
+            <span className="nav-badge nav-badge-next">NEXT</span>
+          </button>
+          <Link className="nav-item nav-secondary" aria-label="趋势看板，从概览查看" title="打开项目概览中的质量趋势" to={`${preserveState(`/projects/${projectId}/overview`)}#quality-trends`}>
+            <BarChart3 size={17} />
+            <span className="nav-item-copy"><span className="nav-label">趋势看板</span><small>质量 / 延迟 / 成本</small></span>
+            <span className="nav-badge nav-badge-live">LIVE</span>
+          </Link>
           <span className="nav-section">配置</span>
-          <span className="nav-disabled" title="当前版本只读"><Boxes size={17} /><span className="nav-label">模型与 Prompt</span></span>
-          <span className="nav-disabled" title="当前版本只读"><Settings size={17} /><span className="nav-label">项目设置</span></span>
+          <button className="nav-item nav-readonly" type="button" aria-label="模型与 Prompt，只读快照" onClick={() => setConfigurationOpen(true)}>
+            <Boxes size={17} />
+            <span className="nav-item-copy"><span className="nav-label">模型与 Prompt</span><small>当前运行版本</small></span>
+            <span className="nav-badge">READ</span>
+          </button>
+          <button className="nav-item nav-disabled" type="button" aria-label="项目设置，连接 API 后开放" title="连接项目 API 后开放" disabled>
+            <Settings size={17} />
+            <span className="nav-item-copy"><span className="nav-label">项目设置</span><small>连接 API 后开放</small></span>
+            <span className="nav-badge">API</span>
+          </button>
         </nav>
 
         <div className="sidebar-footer">
@@ -176,6 +196,25 @@ export function WorkspaceShell() {
           <div><strong>3. 定位故障</strong><p>从完成任务进入报告，再下钻失败样本核对检索证据与引用。</p></div>
         </div>
         <p className="form-hint">顶部“数据场景”可切换加载、空数据、失败和部分数据状态；带 MOCK 标识的写入仅保存在当前页面会话。</p>
+      </Dialog>
+      <Dialog open={roadmapOpen} title="版本对比 · 下一阶段" eyebrow="ROADMAP / PHASE 2" onClose={() => setRoadmapOpen(false)}>
+        <div className="availability-card">
+          <div className="availability-icon"><GitCompareArrows size={19} /></div>
+          <div><strong>入口已定义，交互将在下一阶段接入</strong><p>计划支持选择基线任务，对比模型、Prompt、检索配置与指标回归，并下钻到变化样本。</p></div>
+        </div>
+        <div className="roadmap-list" aria-label="版本对比计划能力">
+          <div><span>01</span><strong>版本上下文</strong><small>Dataset / Model / Prompt / Retriever</small></div>
+          <div><span>02</span><strong>指标回归</strong><small>Delta / Gate / Regression samples</small></div>
+          <div><span>03</span><strong>故障差异</strong><small>Diagnosis diff / Evidence trace</small></div>
+        </div>
+      </Dialog>
+      <Dialog open={configurationOpen} title="模型与 Prompt · 只读快照" eyebrow="ACTIVE EVALUATION CONTEXT" onClose={() => setConfigurationOpen(false)}>
+        <div className="configuration-snapshot">
+          <div><Bot size={16} /><span><small>MODEL</small><strong>qwen3-32b@2026-08</strong></span><i>ACTIVE</i></div>
+          <div><SlidersHorizontal size={16} /><span><small>PROMPT</small><strong>support-rag@v12</strong></span><i>PINNED</i></div>
+          <div><Database size={16} /><span><small>DATASET</small><strong>客服黄金问答集 · v3.4</strong></span><i>120 SAMPLES</i></div>
+        </div>
+        <p className="form-hint">当前 Mock 工作台展示最近一次评测的版本快照；连接配置 API 后可编辑并创建新版本。</p>
       </Dialog>
       <Toast message={feedback} onDismiss={() => setFeedback(null)} />
     </div>
