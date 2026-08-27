@@ -124,7 +124,42 @@ pwsh -File tests/acceptance/validate-wor-49.ps1
 
 每次 CI 输出必须记录 Git SHA、模式、base URL（不含凭据）、失败用例 ID 和 artifact。真实 provider 不进入本轮门禁。
 
-## 8. 风险清单
+## 8. PR #13/#14/#15 组合验收执行记录（2026-08-27）
+
+### 8.1 组合与环境
+
+- 基线：`main` `db3271a`。
+- 组合 head：PR #13 `37ce728`、PR #14 `9139264`、PR #15 `1aa8f20`。
+- 本地顺序：`#13 -> #14 -> #15`，三次 merge 均无冲突。该顺序先落 QA 门禁、再落后端契约、最后落前端调用；当前文件集合不存在 Git 层硬依赖，但建议保持此顺序以便逐步验证。
+- 自动化：前端原始套件 `22 passed`；附加审计用例后 `25 passed`。后端 `49 passed`，分支覆盖率 `92.97%`；Ruff、QA contract 和仓库 contract 均通过。
+- API 实例：本地 FastAPI + SQLite，前端使用 `VITE_API_MODE=api`、`VITE_API_BASE_URL=/api/v1` 的生产构建，经同源转发访问真实 API。12 条示例原子写入返回 `sample_count=12, imported_samples=12`；任务从 `queued` 到 `completed/succeeded`；报告导出 schema `1.0`；confirmed/dismissed 均持久化并进入后续导出。
+- 浏览器环境：本轮内置浏览器发现结果为空，无可用 `iab` 实例。按浏览器控制规范未改用其他浏览器后端，因此下表“真实浏览器”均为环境阻断，不得视为通过。
+
+### 8.2 13 项 P0 结果
+
+| ID | 组合自动化 / API | 真实浏览器 | 证据与判定 |
+| --- | --- | --- | --- |
+| W49-UI-001 | 通过 | 阻断 | mock 创建测试通过；真实 `POST /datasets` 返回 201 并持久化草稿 |
+| W49-UI-002 | 通过 | 阻断 | mock 空态导入测试通过；真实 API 原子导入 12 条，`accepted/imported=12` |
+| W49-UI-003 | 通过 | 阻断 | Testing Library 验证 draft 筛选、计数与结果集合 |
+| W49-UI-004 | **失败** | 阻断 | `DatasetsPage` 没有“刷新”按钮；附加可访问角色审计确认 `queryByRole(button, /刷新/)` 为空 |
+| W49-UI-005 | 通过 | 阻断 | mock 新建任务测试通过；真实 `POST /evaluation-jobs` 返回 queued，随后完成 |
+| W49-UI-006 | 通过 | 阻断 | Testing Library 验证 completed 筛选与空态 |
+| W49-UI-007 | **失败** | 阻断 | API 状态可从 queued 读到 completed，但 `EvaluationsPage` 没有“刷新/重新读取状态”控件；附加角色审计确认缺失 |
+| W49-UI-008 | 通过 | 阻断 | mock JSON 导出测试通过；真实 `/report/export` 返回 schema `1.0`、report 和 samples |
+| W49-UI-010 | 通过 | 阻断 | Testing Library 验证复核分段；真实导出在复核后反映 confirmed/dismissed |
+| W49-UI-011 | 通过 | 阻断 | Clipboard mock 断言原文写入并出现“已复制模型回答”反馈 |
+| W49-UI-012 | 通过 | 阻断 | mock 源文档详情弹窗测试通过；内部 `kb://` 只展示元数据，不尝试外跳 |
+| W49-UI-013 | 通过 | 阻断 | mock 确认反馈测试通过；真实 PATCH confirmed 后导出状态仍为 confirmed |
+| W49-UI-014 | 通过 | 阻断 | 附加 UI 审计验证 dismissed 反馈及按钮禁用；真实 PATCH dismissed 后导出状态为 dismissed |
+
+### 8.3 结论
+
+- 组合自动化/API：`11/13` 通过，`2/13` 产品失败（W49-UI-004、W49-UI-007）。
+- 真实浏览器：`0/13` 完成，原因是本轮无可用内置浏览器实例；不是产品通过证据。
+- 父任务暂不可进入 `in_review`。需补数据集刷新和任务状态刷新入口（含 loading、旧数据保留、错误/重试反馈），增加相应前端测试；随后在可用的内置浏览器中重新执行 13 项 P0，至少对 mock 全量点击，并对 API 模式执行创建、状态读取、报告、复核和导出闭环。
+
+## 9. 风险清单
 
 | 风险 | 影响 | 门禁/缓解 |
 | --- | --- | --- |
