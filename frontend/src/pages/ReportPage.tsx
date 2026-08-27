@@ -1,15 +1,20 @@
 import { ArrowLeft, ArrowRight, CheckCircle2, Download, GitCompareArrows, ShieldAlert } from 'lucide-react';
+import { useState } from 'react';
 import { Link, useOutletContext, useParams } from 'react-router-dom';
-import { apiClient } from '../api/client';
+import { apiClient, apiMode } from '../api/client';
 import { FailureChart } from '../components/FailureChart';
+import { Dialog, Toast } from '../components/Interaction';
 import { MetricCard } from '../components/MetricCard';
 import { Panel } from '../components/Panel';
 import { EmptyState, ErrorState, LoadingState, PartialDataBanner } from '../components/PageState';
 import { StatusBadge } from '../components/StatusBadge';
 import type { WorkspaceOutletContext } from '../components/WorkspaceShell';
 import { useApiResource } from '../hooks/useApiResource';
+import { downloadTextFile } from '../lib/browser';
 import { formatDateTime, formatScore } from '../lib/format';
 import type { EvaluationReport } from '../types';
+
+type SampleFilter = 'all' | 'pending' | 'confirmed';
 
 const emptyReport = (taskId: string): EvaluationReport => ({
   id: `empty-${taskId}`,
@@ -24,6 +29,11 @@ const emptyReport = (taskId: string): EvaluationReport => ({
 export function ReportPage() {
   const { projectId = 'demo', taskId = '' } = useParams();
   const { scenario } = useOutletContext<WorkspaceOutletContext>();
+  const [sampleFilter, setSampleFilter] = useState<SampleFilter>('all');
+  const [compareOpen, setCompareOpen] = useState(false);
+  const [exportOpen, setExportOpen] = useState(false);
+  const [feedback, setFeedback] = useState<string | null>(null);
+  const [exporting, setExporting] = useState(false);
   const { state, retry } = useApiResource(
     () => apiClient.getEvaluationReport(projectId, taskId),
     [projectId, taskId],
@@ -43,10 +53,35 @@ export function ReportPage() {
   if (state.status === 'loading') return <LoadingState label="正在生成评测报告视图" />;
   if (state.status === 'error') return <ErrorState message={state.message} onRetry={retry} />;
   const report = state.data;
+  const filteredSamples = sampleFilter === 'all'
+    ? report.samples
+    : report.samples.filter((sample) => sample.reviewStatus === sampleFilter);
 
   if (report.samples.length === 0) {
     return <><BackLink projectId={projectId} /><EmptyState title="报告没有可用样本" description="任务已完成，但当前筛选条件下没有可展示的指标或样本。" /></>;
   }
+
+  const exportReport = async (format: 'json' | 'markdown') => {
+    setExporting(true);
+    try {
+      const artifact = await apiClient.exportEvaluationReport(projectId, taskId);
+      const exportableReport = artifact.report;
+      if (format === 'json') {
+        downloadTextFile(`${exportableReport.task.id}-report.json`, JSON.stringify(artifact, null, 2), 'application/json;charset=utf-8');
+      } else {
+        const metricLines = exportableReport.metrics.map((metric) => `| ${metric.label} | ${metric.value ?? '不可计算'}${metric.unit ?? ''} | ${metric.threshold ?? '—'}${metric.unit ?? ''} |`).join('\n');
+        const sampleLines = exportableReport.samples.map((sample) => `- ${sample.id} · ${sample.failureType} · ${sample.reviewStatus}: ${sample.question}`).join('\n');
+        const markdown = `## ${exportableReport.task.name}\n\n- 任务：${exportableReport.task.id}\n- 门禁：${exportableReport.verdict}\n- 数据集：${exportableReport.task.datasetName}\n- 模型 / Prompt：${exportableReport.task.modelVersion} / ${exportableReport.task.promptVersion}\n- 生成时间：${exportableReport.generatedAt}\n\n${exportableReport.verdictReason}\n\n### 指标\n\n| 指标 | 当前值 | 门槛 |\n| --- | ---: | ---: |\n${metricLines}\n\n### 失败样本\n\n${sampleLines}\n`;
+        downloadTextFile(`${exportableReport.task.id}-report.md`, markdown, 'text/markdown;charset=utf-8');
+      }
+      setExportOpen(false);
+      setFeedback(`已导出 ${format === 'json' ? 'JSON' : 'Markdown'} 报告`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? `导出失败：${error.message}` : '导出失败，请稍后重试');
+    } finally {
+      setExporting(false);
+    }
+  };
 
   return (
     <>
@@ -57,7 +92,7 @@ export function ReportPage() {
           <h2>{report.task.name}</h2>
           <p>{report.task.datasetName} · {report.task.modelVersion} · {report.task.promptVersion}</p>
         </div>
-        <div className="page-actions"><button className="button button-secondary" type="button"><GitCompareArrows size={15} />对比版本</button><button className="button button-secondary" type="button"><Download size={15} />导出报告</button></div>
+        <div className="page-actions"><button className="button button-secondary" type="button" onClick={() => setCompareOpen(true)}><GitCompareArrows size={15} />对比版本</button><button className="button button-secondary" type="button" onClick={() => setExportOpen(true)}><Download size={15} />导出报告</button></div>
       </div>
       <PartialDataBanner message={state.partialMessage} />
       <section className={`verdict-card verdict-${report.verdict}`}>
@@ -72,11 +107,11 @@ export function ReportPage() {
           <dl className="config-list"><div><dt>数据集</dt><dd>{report.task.datasetName}</dd></div><div><dt>模型版本</dt><dd><code>{report.task.modelVersion}</code></dd></div><div><dt>Prompt 版本</dt><dd><code>{report.task.promptVersion}</code></dd></div><div><dt>完成时间</dt><dd>{formatDateTime(report.task.completedAt)}</dd></div></dl>
         </Panel>
       </div>
-      <Panel title="失败样本" eyebrow="按严重程度排序" action={<div className="segmented"><button className="active" type="button">全部 {report.samples.length}</button><button type="button">待复核</button><button type="button">已确认</button></div>}>
-        <div className="table-wrap">
+      <Panel title="失败样本" eyebrow="按严重程度排序" action={<div className="segmented"><button className={sampleFilter === 'all' ? 'active' : ''} type="button" onClick={() => setSampleFilter('all')}>全部 {report.samples.length}</button><button className={sampleFilter === 'pending' ? 'active' : ''} type="button" onClick={() => setSampleFilter('pending')}>待复核 {report.samples.filter((sample) => sample.reviewStatus === 'pending').length}</button><button className={sampleFilter === 'confirmed' ? 'active' : ''} type="button" onClick={() => setSampleFilter('confirmed')}>已确认 {report.samples.filter((sample) => sample.reviewStatus === 'confirmed').length}</button></div>}>
+        {filteredSamples.length === 0 ? <EmptyState title="该分段没有样本" description="切换到其他复核状态查看失败样本。" /> : <div className="table-wrap">
           <table>
             <thead><tr><th>问题</th><th>疑似原因</th><th>Recall@5</th><th>忠实性</th><th>引用命中</th><th>延迟</th><th>复核</th><th /></tr></thead>
-            <tbody>{report.samples.map((sample) => (
+            <tbody>{filteredSamples.map((sample) => (
               <tr key={sample.id}>
                 <td className="question-cell"><strong>{sample.question}</strong><small>{sample.id}</small></td>
                 <td><StatusBadge value={sample.severity} /> <span>{sample.failureType}</span></td>
@@ -86,8 +121,19 @@ export function ReportPage() {
               </tr>
             ))}</tbody>
           </table>
-        </div>
+        </div>}
       </Panel>
+
+      <Dialog open={compareOpen} title="版本对比" eyebrow="CURRENT VS BASELINE" onClose={() => setCompareOpen(false)}>
+        <div className="compare-summary"><div><span>当前版本</span><strong>{report.task.modelVersion}</strong><code>{report.task.promptVersion}</code></div><GitCompareArrows size={22} /><div><span>对比基线</span><strong>{report.baselineLabel}</strong><small>来自当前报告基线</small></div></div>
+        <div className="table-wrap compact-table"><table><thead><tr><th>指标</th><th>基线估值</th><th>当前值</th><th>变化</th></tr></thead><tbody>{report.metrics.map((metric) => { const baseline = metric.value !== null && metric.delta !== null && metric.delta !== undefined ? metric.value - metric.delta : null; return <tr key={metric.key}><td>{metric.label}</td><td>{baseline === null ? '—' : `${baseline.toFixed(1)}${metric.unit ?? ''}`}</td><td>{metric.value === null ? '—' : `${metric.value}${metric.unit ?? ''}`}</td><td className={(metric.delta ?? 0) >= 0 ? 'text-positive' : 'text-critical'}>{metric.delta === null || metric.delta === undefined ? '—' : `${metric.delta > 0 ? '+' : ''}${metric.delta}${metric.unit ?? ''}`}</td></tr>; })}</tbody></table></div>
+        <p className="form-hint">MVP 对比使用报告中的基线标签与指标变化值推导，不会把推导结果写回服务端。</p>
+      </Dialog>
+      <Dialog open={exportOpen} title="导出评测报告" eyebrow="PORTABLE ARTIFACT" onClose={() => setExportOpen(false)}>
+        <p>选择适合后续审计或协作的格式。{apiMode === 'mock' ? 'Mock 模式从当前内存报告生成导出。' : 'API 模式从服务端报告导出契约读取最新数据。'}</p>
+        <div className="export-options"><button type="button" disabled={exporting} onClick={() => void exportReport('json')}><strong>JSON</strong><span>完整字段，适合程序处理与归档</span></button><button type="button" disabled={exporting} onClick={() => void exportReport('markdown')}><strong>Markdown</strong><span>指标与失败样本摘要，适合评审</span></button></div>
+      </Dialog>
+      <Toast message={feedback} onDismiss={() => setFeedback(null)} />
     </>
   );
 }
