@@ -2,6 +2,7 @@ export type TaskStatus = 'queued' | 'running' | 'completed' | 'failed';
 export type DatasetStatus = 'ready' | 'indexing' | 'draft' | 'failed';
 export type Severity = 'critical' | 'warning' | 'healthy' | 'unknown';
 export type ViewScenario = 'normal' | 'loading' | 'empty' | 'error' | 'partial';
+export type SampleReviewStatus = 'pending' | 'confirmed' | 'dismissed';
 
 export interface MetricValue {
   key: string;
@@ -91,7 +92,35 @@ export interface SampleSummary {
   faithfulness: number | null;
   citationHitRate: number | null;
   latencyMs: number;
-  reviewStatus: 'pending' | 'confirmed' | 'dismissed';
+  reviewStatus: SampleReviewStatus;
+}
+
+export interface DatasetSampleInput {
+  sampleId: string;
+  question: string;
+  referenceAnswer?: string;
+  tags?: string[];
+}
+
+export interface DatasetCreateInput {
+  name: string;
+  description?: string;
+  owner: string;
+  version?: string;
+  samples?: DatasetSampleInput[];
+}
+
+export interface EvaluationTaskCreateInput {
+  datasetId: string;
+  name?: string;
+  modelVersion: string;
+  promptVersion: string;
+}
+
+export interface ReportExport {
+  schemaVersion: '1.0';
+  exportedAt: string;
+  report: EvaluationReport;
 }
 
 export interface RetrievedDocument {
@@ -140,7 +169,16 @@ export interface SampleDiagnosis {
 export interface ApiClient {
   getProjectOverview(projectId: string): Promise<ProjectOverview>;
   listDatasets(projectId: string): Promise<Dataset[]>;
+  createDataset(projectId: string, input: DatasetCreateInput): Promise<Dataset>;
   listEvaluationTasks(projectId: string): Promise<EvaluationTask[]>;
+  createEvaluationTask(projectId: string, input: EvaluationTaskCreateInput): Promise<EvaluationTask>;
   getEvaluationReport(projectId: string, taskId: string): Promise<EvaluationReport>;
+  exportEvaluationReport(projectId: string, taskId: string): Promise<ReportExport>;
   getSampleDiagnosis(projectId: string, taskId: string, sampleId: string): Promise<SampleDiagnosis>;
+  updateSampleReview(
+    projectId: string,
+    taskId: string,
+    sampleId: string,
+    reviewStatus: SampleReviewStatus,
+  ): Promise<SampleSummary>;
 }
