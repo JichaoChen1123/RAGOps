@@ -109,6 +109,46 @@ def test_review_validation_and_missing_sample_errors(client, sample_payload) -> 
     assert missing.json()["error"]["code"] == "RESOURCE_NOT_FOUND"
 
 
+def test_review_state_round_trip_is_consistent_in_list_and_export(client, sample_payload) -> None:
+    dataset = client.post(
+        "/api/v1/datasets",
+        json={"name": "review-round-trip", "owner": "quality-platform", "samples": [sample_payload]},
+    )
+    dataset_id = dataset.json()["id"]
+    client.post(f"/api/v1/datasets/{dataset_id}:publish")
+    job = client.post(
+        "/api/v1/evaluation-jobs",
+        json={"dataset_id": dataset_id, "config_version": "review-round-trip-v1"},
+    )
+    job_id = job.json()["id"]
+    sample_id = sample_payload["sample_id"]
+
+    initial = client.get(f"/api/v1/evaluation-jobs/{job_id}/samples").json()["items"][0]
+    assert initial["review_status"] == "pending"
+    assert initial["reviewed_at"] is None
+
+    dismissed = client.patch(
+        f"/api/v1/evaluation-jobs/{job_id}/samples/{sample_id}/review",
+        json={"review_status": "dismissed"},
+    )
+    assert dismissed.status_code == 200
+    assert dismissed.json()["reviewed_at"] is not None
+    dismissed_export = client.get(f"/api/v1/evaluation-jobs/{job_id}/report/export").json()
+    assert dismissed_export["samples"][0]["review_status"] == "dismissed"
+
+    reset = client.patch(
+        f"/api/v1/evaluation-jobs/{job_id}/samples/{sample_id}/review",
+        json={"review_status": "pending"},
+    )
+    assert reset.status_code == 200
+    assert reset.json()["reviewed_at"] is None
+    listed = client.get(f"/api/v1/evaluation-jobs/{job_id}/samples").json()["items"][0]
+    reset_export = client.get(f"/api/v1/evaluation-jobs/{job_id}/report/export").json()
+    assert listed["review_status"] == "pending"
+    assert listed["reviewed_at"] is None
+    assert reset_export["samples"][0]["review_status"] == "pending"
+
+
 def test_openapi_exposes_mvp_write_contracts(client) -> None:
     document = client.get("/openapi.json").json()
 

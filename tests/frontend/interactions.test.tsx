@@ -59,6 +59,29 @@ describe('RAGOps MVP interaction loops', () => {
     expect(await screen.findByText('已归档')).toBeInTheDocument();
   });
 
+  it('searches datasets and makes details and copy actions observable', async () => {
+    const user = userEvent.setup();
+    const writeText = vi.spyOn(navigator.clipboard, 'writeText').mockResolvedValue(undefined);
+    renderRoute('/projects/demo/datasets');
+    await screen.findByText('客服黄金问答集');
+
+    await user.type(screen.getByRole('textbox', { name: '搜索数据集' }), '账单');
+    expect(screen.getByText('账单边界样本')).toBeInTheDocument();
+    expect(screen.queryByText('客服黄金问答集')).not.toBeInTheDocument();
+
+    await user.click(screen.getByRole('button', { name: '账单边界样本 更多操作' }));
+    await user.click(screen.getByRole('menuitem', { name: '查看详情' }));
+    const details = screen.getByRole('dialog', { name: '账单边界样本' });
+    expect(within(details).getByText('ds-billing-edge')).toBeInTheDocument();
+    expect(within(details).getByText(/64 条/)).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '关闭账单边界样本' }));
+
+    await user.click(screen.getByRole('button', { name: '账单边界样本 更多操作' }));
+    await user.click(screen.getByRole('menuitem', { name: '复制 ID' }));
+    expect(writeText).toHaveBeenCalledWith('ds-billing-edge');
+    expect(await screen.findByRole('status')).toHaveTextContent('已复制数据集 ID：ds-billing-edge');
+  });
+
   it('refreshes datasets without hiding stale data and offers a retry after failure', async () => {
     const user = userEvent.setup();
     renderRoute('/projects/demo/datasets');
@@ -109,6 +132,20 @@ describe('RAGOps MVP interaction loops', () => {
     expect(await screen.findByText('未找到匹配任务')).toBeInTheDocument();
   });
 
+  it('searches evaluation tasks and opens the matching completed report', async () => {
+    const user = userEvent.setup();
+    renderRoute('/projects/demo/evaluations');
+    await screen.findByText('客服知识库 v3 回归评测');
+
+    await user.type(screen.getByRole('textbox', { name: '搜索评测任务' }), '客服知识库');
+    expect(screen.getByText('客服知识库 v3 回归评测')).toBeInTheDocument();
+    expect(screen.queryByText('Rerank 参数 A/B 基线')).not.toBeInTheDocument();
+    await user.click(screen.getByRole('link', { name: /查看报告/ }));
+
+    expect(await screen.findByRole('heading', { level: 2, name: '客服知识库 v3 回归评测' })).toBeInTheDocument();
+    expect(screen.getByText('发布门禁结论')).toBeInTheDocument();
+  });
+
   it('refreshes task status while preserving the table and retries a failed read', async () => {
     const user = userEvent.setup();
     renderRoute('/projects/demo/evaluations');
@@ -157,6 +194,17 @@ describe('RAGOps MVP interaction loops', () => {
     expect(await screen.findByText('正在重新载入 Mock 项目数据')).toBeInTheDocument();
   });
 
+  it('uses the overview new-evaluation entry to open the creation dialog', async () => {
+    const user = userEvent.setup();
+    renderRoute('/projects/demo/overview');
+    await screen.findByRole('heading', { level: 2, name: '客服 RAG 生产线' });
+
+    await user.click(screen.getByRole('link', { name: '新建评测' }));
+    expect(await screen.findByRole('heading', { level: 2, name: '评测任务' })).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '新建评测任务' }));
+    expect(screen.getByRole('dialog', { name: '新建评测任务' })).toBeInTheDocument();
+  });
+
   it('filters report samples, compares versions and exports JSON', async () => {
     const user = userEvent.setup();
     renderRoute('/projects/demo/evaluations/eval-20260826/report');
@@ -193,6 +241,21 @@ describe('RAGOps MVP interaction loops', () => {
     expect(screen.getByRole('button', { name: /确认故障归因/ })).toBeDisabled();
   });
 
+  it('links a citation to its evidence and dismisses the diagnosis', async () => {
+    const user = userEvent.setup();
+    renderRoute('/projects/demo/evaluations/eval-20260826/samples/sample-042');
+    await screen.findByText('关键政策文档未进入 Top 5');
+
+    await user.click(screen.getByRole('button', { name: /\[2\].*不支持/ }));
+    expect(screen.getByRole('heading', { level: 3, name: '订单退款通用规则' })).toBeInTheDocument();
+    expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
+
+    await user.click(screen.getByRole('button', { name: '排除诊断' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('已排除本次诊断（仅当前页面会话）');
+    expect(screen.getByRole('button', { name: '排除诊断' })).toBeDisabled();
+    expect(screen.getByRole('button', { name: '排除诊断' })).toHaveAttribute('aria-pressed', 'true');
+  });
+
   it('makes workspace search, help and sidebar controls actionable', async () => {
     const user = userEvent.setup();
     renderRoute('/projects/demo/overview');
@@ -210,6 +273,9 @@ describe('RAGOps MVP interaction loops', () => {
     await user.click(screen.getByRole('button', { name: '收起侧边栏' }));
     expect(screen.getByRole('button', { name: '展开侧边栏' })).toHaveAttribute('aria-pressed', 'true');
     await user.click(screen.getByRole('button', { name: /客服 RAG 生产线/ }));
-    expect(screen.getByRole('menu')).toBeInTheDocument();
+    const projectMenu = screen.getByRole('menu');
+    expect(within(projectMenu).getByRole('menuitem', { name: /其他项目/ })).toBeDisabled();
+    await user.click(within(projectMenu).getByRole('menuitem', { name: /客服 RAG 生产线/ }));
+    expect(await screen.findByRole('status')).toHaveTextContent('当前已是“客服 RAG 生产线”');
   });
 });
