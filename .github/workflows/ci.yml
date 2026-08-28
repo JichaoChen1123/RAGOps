@@ -72,6 +72,9 @@ jobs:
       - name: Validate WOR-49 visible interaction contract
         shell: pwsh
         run: ./tests/acceptance/validate-wor-49.ps1
+      - name: Validate WOR-55 UI and README contract
+        shell: pwsh
+        run: ./tests/acceptance/validate-wor-55.ps1
 
   docker:
     name: Docker Compose build

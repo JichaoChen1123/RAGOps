@@ -225,4 +225,5 @@ docker-compose.yml   本地一键启动编排
 - [评测数据集格式与样例](examples/datasets/README.md)
 - [MVP 测试计划、验收标准与质量门禁](docs/qa/test-plan.md)
 - [功能回归验收记录](docs/qa/wor-52-functional-acceptance.md)
+- [UI 与 README 二轮验收记录](docs/qa/wor-55-ui-readme-acceptance.md)
 - [测试目录与 fixture 自检](tests/README.md)
