@@ -274,6 +274,14 @@ CI 在 pull request 和 `main` push 上运行：
 | `VITE_API_MODE=mock` | 仓库内脱敏 fixture | 只修改当前浏览器内存，刷新后重置。 | 稳定演示 UI、交互状态和诊断链路。 |
 | `VITE_API_MODE=api` | `VITE_API_BASE_URL` 指向的后端 | 调用真实 MVP API，数据写入 SQLite。 | API 契约联调、后端验收和二次开发。 |
 
+### Mock 模式
+
+Mock 模式用于稳定演示产品链路。它读取仓库内脱敏 fixture，支持创建、筛选、导出、复核等前端交互，但写入只保存在当前浏览器会话中，刷新页面后会重置。
+
+### API 模式
+
+API 模式用于真实 MVP 后端联调。它通过 `VITE_API_BASE_URL` 调用 FastAPI 服务，并把数据集、评测任务、样本复核和报告结果写入 SQLite。当前 API 仍使用确定性执行器，不调用真实 LLM 或向量检索服务。
+
 ### No silent fallback
 
 API 请求失败时，页面必须显示错误或重试入口，不能静默回退到 mock 数据后显示成功。这条规则用于避免把演示数据误判为真实后端结果。
@@ -343,4 +351,3 @@ docker-compose.yml   本地一键启动编排
 4. 增加 API 模式浏览器端到端验收，补齐 CORS、代理、错误映射和持久化刷新。
 5. 增加 Playwright E2E 与截图回归，覆盖桌面和移动端视口。
 6. 增加任务队列、鉴权、多租户、对象存储和可观测性。
-
