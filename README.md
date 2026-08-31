@@ -1,77 +1,181 @@
 # RAGOps
 
-**RAGOps 是 RAG 应用质量评测与故障诊断平台。**
+<p align="center">
+  <strong>RAG 应用质量评测与故障诊断平台</strong>
+</p>
 
-当前仓库交付了一个可运行、可测试的工程化 MVP：用脱敏 fixture 和确定性执行器完成“数据集 → 评测任务 → 指标计算 → 样本诊断 → 人工复核 → 报告导出”闭环，让评测结果可复现、故障依据可审计、质量门禁可自动执行。
+<p align="center">
+  用工程化方式回答三个问题：RAG 现在答得好不好、失败样本为什么失败、这次改动能不能上线。
+</p>
 
-> 这是 RAGOps 工程骨架，不是生产 RAG 服务。默认 mock 模式不会调用真实模型；真实 LLM provider、向量库、Embedding/Rerank 服务仍属于下一阶段。
+<p align="center">
+  <a href="https://github.com/JichaoChen1123/RAGOps/actions/workflows/ci.yml">
+    <img alt="CI" src="https://github.com/JichaoChen1123/RAGOps/actions/workflows/ci.yml/badge.svg" />
+  </a>
+  <img alt="Frontend" src="https://img.shields.io/badge/frontend-React%20%2B%20TypeScript-2563eb" />
+  <img alt="Backend" src="https://img.shields.io/badge/backend-FastAPI%20%2B%20SQLite-0f766e" />
+  <img alt="Quality" src="https://img.shields.io/badge/quality-Pytest%20%2B%20Vitest-15803d" />
+  <img alt="Mode" src="https://img.shields.io/badge/default-Mock%20UI-b7791f" />
+</p>
 
-## 技术栈与工程含量
+---
 
-| 层次 | 技术与已实现内容 |
-| --- | --- |
-| 前端 | React、TypeScript、Vite、React Router；组件化工作台；类型化 mock/API client；概览、数据集、评测任务、报告和样本诊断路由；加载、空数据、错误和部分数据状态。 |
-| 后端 | FastAPI、SQLite、SQLAlchemy、Pydantic / Pydantic Settings；数据集、评测任务、样本结果、复核状态和报告 API；幂等任务创建、统一错误结构与健康检查。 |
-| 评测 | Recall@K、MRR@K、NDCG@K、Context Precision/Recall、引用命中率等确定性指标；版本化诊断规则；脱敏样本 fixture；JSON 报告导出。 |
-| 工程化 | Docker Compose、GitHub Actions；Ruff、Pytest、Vitest、TypeScript 类型检查和前端构建；分支覆盖率门禁；Markdown、JSON/JSONL、YAML 与 fixture 一致性校验。 |
+## 30 秒看懂
+
+RAGOps 是一个面向 RAG 系统的质量控制台。它把评测数据集、模型版本、Prompt 版本、检索证据、指标计算、失败诊断、人工复核和报告导出串成一条可复现的链路。
+
+当前仓库交付的是可运行、可测试的工程化 MVP：
+
+| 能力 | 当前状态 | 说明 |
+| --- | --- | --- |
+| Mock UI 演示 | 已完成 | 浏览器里可体验概览、数据集、评测任务、报告、样本诊断和主要按钮反馈。 |
+| API MVP | 已完成 | FastAPI 提供数据集、样本导入、评测任务、复核状态和报告导出接口。 |
+| 确定性评测 | 已完成 | 支持 Recall@K、MRR@K、NDCG@K、Context Precision/Recall、Citation Hit Rate 等指标。 |
+| 故障诊断 | 已完成 | 根据固定规则输出检索缺失、上下文污染、引用缺失等样本级归因。 |
+| 工程质量门禁 | 已完成 | GitHub Actions 运行后端、前端、文档、fixture 和 Docker Compose 构建检查。 |
+| 真实 RAG 基础设施 | 下一阶段 | 真实 LLM provider、向量库、Embedding/Rerank、LLM judge 和生产部署尚未接入。 |
+
+> 重要边界：默认 `VITE_API_MODE=mock` 不会调用真实模型，也不会写入生产数据。它用于稳定演示产品链路和前端交互。真实 API 联调请使用 `VITE_API_MODE=api`。
+
+## 目录
+
+- [项目背景](#项目背景)
+- [核心流程](#核心流程)
+- [界面与功能](#界面与功能)
+- [技术栈](#技术栈)
+- [快速启动](#快速启动)
+- [无 Docker 运行](#无-docker-运行)
+- [API 验收路径](#api-验收路径)
+- [质量检查](#质量检查)
+- [Mock 和 API 边界](#mock-和-api-边界)
+- [简历写法](#简历写法)
+- [项目结构](#项目结构)
+- [延伸文档](#延伸文档)
+
+## 项目背景
+
+真实业务中的 RAG 应用通常不是“一次上线就结束”。客服知识库、售后政策、企业制度、内部数据助手都会持续变更：文档会更新，切分策略会调整，Embedding 和 Rerank 会更换，Prompt 会迭代，模型版本也会升级。
+
+这些变更带来三个很实际的问题：
+
+| 现实问题 | 如果没有 RAGOps | RAGOps 的作用 |
+| --- | --- | --- |
+| 质量靠人工感觉 | 只能人工抽问几十条，样本不固定，结果不可复现。 | 固定评测集、指标和质量门禁，每次改动都能复测。 |
+| 答错后定位慢 | 不知道是检索没召回、上下文污染、引用错误，还是模型幻觉。 | 对失败样本下钻到检索证据、引用和诊断规则。 |
+| 改动上线风险高 | Prompt 或模型一改，旧问题可能被答坏但没人发现。 | 记录模型、Prompt、数据集和评测配置，用版本对比做回归判断。 |
+
+这个项目解决的不是“怎么调用一次大模型”，而是“怎么把 RAG 应用的质量评估做成可运营、可追溯、可验收的工程系统”。
+
+## 核心流程
+
+```mermaid
+flowchart LR
+  A[脱敏评测样本] --> B[数据集发布]
+  B --> C[创建评测任务]
+  C --> D[确定性指标计算]
+  D --> E[样本级故障诊断]
+  E --> F[人工复核]
+  F --> G[报告导出]
+  G --> H[质量门禁与回归决策]
+```
 
 核心链路：
 
 ```text
-脱敏样本 / fixture
-        ↓
-SQLite 数据集（草稿、导入、发布冻结）
-        ↓
-确定性评测任务（queued → running → completed）
-        ↓
-聚合指标 + 样本级诊断证据
-        ↓
-人工复核（pending / confirmed / dismissed）
-        ↓
-JSON 导出；前端可继续生成 Markdown 文件
+Dataset -> Evaluation Job -> Metrics -> Failure Diagnosis -> Review -> Report
 ```
 
-## 功能完成度
+每次评测都会保留：
 
-| 范围 | 状态 | 当前能力与边界 |
+- 数据集版本，例如 `客服黄金问答集 v3.4`
+- 模型版本，例如 `qwen3-32b@2026-08`
+- Prompt 版本，例如 `support-rag@v12`
+- 指标结果，例如 Recall@K、NDCG@K、Citation Hit Rate
+- 失败归因，例如检索缺失、上下文污染、引用不支持
+- 人工复核状态，例如 pending、confirmed、dismissed
+- 可导出的 JSON 或 Markdown 报告
+
+## 界面与功能
+
+| 页面 | 作用 | 能体现的工程能力 |
 | --- | --- | --- |
-| Mock UI 演示 | 已完成 | 可浏览概览、数据集、任务、报告和样本诊断；可模拟创建、筛选、复核、版本对比及 JSON/Markdown 导出；包含加载、空、失败和部分数据场景。写入只保存在浏览器内存中，刷新后重置。 |
-| 数据集 API MVP | 已完成 | 创建数据集、批量导入样本、发布冻结、列表与详情读取；使用 SQLite 持久化。 |
-| 评测任务 API MVP | 已完成 | 创建任务、幂等重放、状态流转、样本结果和聚合报告；执行器计算本地确定性指标，不调用外部模型。 |
-| 复核与导出 API MVP | 已完成 | 样本诊断状态可在 `pending`、`confirmed`、`dismissed` 间更新；报告导出接口返回带样本摘要的结构化 JSON。 |
-| 测试与质量门禁 | 已完成 | 后端、评测、前端交互和 API client 均有自动化测试；CI 执行 lint、类型检查、单测、覆盖率、构建、文档/fixture 校验和 Docker 镜像构建。 |
-| 真实 RAG 基础设施 | 下一阶段 | 接入真实 LLM provider、向量数据库、Embedding、Rerank、LLM judge 与线上数据采集。 |
-| 生产级交付 | 下一阶段 | 真实浏览器 E2E、生产部署、鉴权、多租户、可观测性、任务队列、高可用、数据库迁移与对象存储。 |
+| 项目概览 | 展示质量分、趋势、失败分布、最近任务和 RAGOps 技术链路。 | 指标聚合、质量门禁、版本上下文、产品化仪表盘。 |
+| 数据集管理 | 支持搜索、筛选、创建、导入示例 JSONL、查看详情、复制 ID 和 Mock 归档。 | 数据集版本管理、样本资产管理、mock/API 双模式交互。 |
+| 评测任务 | 按数据集、模型和 Prompt 创建任务，展示 queued、running、completed 状态。 | 任务状态机、幂等创建、评测运行追踪。 |
+| 评测报告 | 展示聚合指标、失败分布、运行配置、失败样本列表和报告导出。 | 指标计算、报告生成、质量阈值判断、可审计输出。 |
+| 样本诊断 | 对比问题、期望答案、模型回答、检索证据和引用支持，支持人工确认或排除。 | 证据链追踪、故障归因、人工复核闭环。 |
+| 工作台外壳 | 侧边栏、搜索、帮助、数据场景、mock/API 状态、coming soon 和 disabled 状态。 | 产品边界表达、可用状态设计、可演示工作流。 |
 
-## Mock / API 边界
+默认 mock 演示页面：
 
-| 模式 | 数据来源 | 写入行为 | 适用场景 |
+| 页面 | 地址 |
+| --- | --- |
+| 项目概览 | <http://localhost:5173/projects/demo/overview> |
+| 数据集管理 | <http://localhost:5173/projects/demo/datasets> |
+| 评测任务 | <http://localhost:5173/projects/demo/evaluations> |
+| 评测报告 | <http://localhost:5173/projects/demo/evaluations/eval-20260826/report> |
+| 样本诊断 | <http://localhost:5173/projects/demo/evaluations/eval-20260826/samples/sample-042> |
+
+## 技术栈
+
+| 层次 | 技术 | 用在哪里 | 为什么使用 |
 | --- | --- | --- | --- |
-| `VITE_API_MODE=mock`（默认） | 仓库内脱敏 fixture | 仅修改当前浏览器内存；刷新即重置 | 稳定演示 UI、交互状态和诊断链路 |
-| `VITE_API_MODE=api` | `VITE_API_BASE_URL` 指向的后端 | 调用真实 MVP API，并把成功或错误结果呈现在页面 | API 契约联调与二次开发 |
+| 前端 | React、TypeScript、Vite、React Router | 工作台、路由、组件、状态页、交互弹窗、mock/API client。 | 轻量、类型安全、适合快速构建可测试的管理台 MVP。 |
+| 后端 | FastAPI、Pydantic、Pydantic Settings | REST API、OpenAPI、参数校验、配置管理、统一错误结构。 | API 契约清晰，自动生成 Swagger UI，适合 AI 应用后端。 |
+| 持久化 | SQLite、SQLAlchemy | 数据集、样本、任务、评测结果、复核状态。 | MVP 易部署，后续可平滑迁移到 PostgreSQL 或 MySQL。 |
+| 评测 | Recall@K、MRR@K、NDCG@K、Context Precision/Recall、Citation Hit Rate | 衡量检索召回、排序、上下文质量、引用命中和端到端质量。 | 让质量判断从主观感受变成可复现指标。 |
+| 诊断 | 版本化规则、证据链、置信度、严重级别 | 给失败样本输出故障原因和修复方向。 | 帮助定位应该修知识库、检索、Prompt 还是生成模型。 |
+| 测试 | Pytest、Vitest、TypeScript、Ruff | 后端、评测、前端路由、交互、API client、代码风格。 | 用自动化证明功能不是静态展示。 |
+| 交付 | Docker Compose、GitHub Actions | 本地一键启动、CI、镜像构建、文档和 fixture 校验。 | 方便别人克隆复现，也方便持续迭代。 |
 
-### Mock 模式
+## 快速启动
 
-Mock 模式不是生产 RAG，也不代表模型推理、检索或持久化已经发生。创建、复核和导出用于演示浏览器内的产品链路，页面刷新后状态会重置。
+如果已经安装 Docker Desktop，并且 Docker Engine 正在运行：
 
-### API 模式
+```powershell
+git clone https://github.com/JichaoChen1123/RAGOps.git
+cd RAGOps
+docker compose up --build
+```
 
-API 模式以配置的服务端为事实来源。类型化 client 已覆盖数据集创建、评测任务创建、样本复核和报告导出等资源契约；API MVP 会把数据集、任务结果和复核状态持久化到 SQLite，但仍只执行仓库内确定性评测逻辑，没有接入真实 provider、向量库或生产任务队列。本地浏览器直连后端时，还需要在开发环境补充同源代理或允许跨域访问。
+启动后访问：
 
-### No silent fallback（禁止静默回退）
+- 前端工作台：<http://localhost:5173>
+- 后端 Swagger UI：<http://localhost:8000/docs>
+- 后端就绪检查：<http://localhost:8000/health/ready>
 
-API 请求失败时，页面必须展示错误或重试入口，不能静默切换到 mock 后显示成功；这可以避免把演示数据误判为后端真实结果。
+默认不需要 `.env`。如果要覆盖端口或运行模式：
 
-## 无 Docker 验收教程（Windows PowerShell）
+```powershell
+Copy-Item .env.example .env
+docker compose up --build
+```
 
-### 1. 准备环境
+停止服务并保留数据卷：
+
+```powershell
+docker compose down
+```
+
+同时清理本地数据卷：
+
+```powershell
+docker compose down --volumes
+```
+
+## 无 Docker 运行
+
+适合 Docker 暂时不可用，或者只想验收前端 Mock UI。
+
+### 准备环境
 
 - Git
 - Python 3.11+
 - [uv](https://docs.astral.sh/uv/)
-- Node.js 24 与 npm
+- Node.js 24+
+- npm
 
-在 PowerShell 中确认版本：
+确认版本：
 
 ```powershell
 git --version
@@ -81,16 +185,9 @@ node --version
 npm --version
 ```
 
-克隆并进入仓库：
+### 启动前端 Mock UI
 
-```powershell
-git clone https://github.com/JichaoChen1123/RAGOps.git
-Set-Location RAGOps
-```
-
-### 2. 启动前端 mock 模式
-
-在第一个 PowerShell 窗口、仓库根目录运行：
+PowerShell：
 
 ```powershell
 npm --prefix frontend ci
@@ -98,21 +195,14 @@ $env:VITE_API_MODE = "mock"
 npm --prefix frontend run dev
 ```
 
-访问以下页面验收：
+Git Bash：
 
-| 页面 | 地址 | 验收重点 |
-| --- | --- | --- |
-| 项目概览 | <http://localhost:5173/projects/demo/overview> | 指标卡、趋势、失败类型分布和新建评测入口 |
-| 数据集 | <http://localhost:5173/projects/demo/datasets> | 搜索、筛选、创建/导入演示和状态反馈 |
-| 评测任务 | <http://localhost:5173/projects/demo/evaluations> | 任务创建、筛选、刷新和报告入口 |
-| 评测报告 | <http://localhost:5173/projects/demo/evaluations/eval-20260826/report> | 聚合指标、失败样本、版本对比、JSON/Markdown 导出 |
-| 样本诊断 | <http://localhost:5173/projects/demo/evaluations/eval-20260826/samples/sample-042> | 诊断证据、检索片段、引用信息和复核状态 |
+```bash
+npm --prefix frontend ci
+VITE_API_MODE=mock npm --prefix frontend run dev
+```
 
-页面右上角“数据场景”可切换正常、加载、空数据、请求失败和部分数据。mock 模式中的创建与复核是演示状态，不应当作后端写入成功的证据。
-
-### 3. 启动后端 API
-
-在第二个 PowerShell 窗口、仓库根目录运行：
+### 启动后端 API
 
 ```powershell
 uv sync --project backend --extra dev --frozen
@@ -120,13 +210,15 @@ uv run --project backend ragops init-db
 uv run --project backend uvicorn app.main:app --app-dir backend --reload
 ```
 
-默认数据库文件是仓库根目录的 `ragops.db`。启动后访问：
+默认数据库文件是仓库根目录的 `ragops.db`。后端启动后访问：
 
 - Swagger UI：<http://localhost:8000/docs>
 - OpenAPI JSON：<http://localhost:8000/openapi.json>
 - 就绪检查：<http://localhost:8000/health/ready>
 
-可以在 Swagger UI 按下列顺序验收真实 API MVP：
+## API 验收路径
+
+在 Swagger UI 中按这个顺序验收真实 API MVP：
 
 1. `POST /api/v1/datasets` 创建数据集。
 2. `POST /api/v1/datasets/{dataset_id}/samples:import` 导入样本。
@@ -138,36 +230,9 @@ uv run --project backend uvicorn app.main:app --app-dir backend --reload
 8. `GET /api/v1/evaluation-jobs/{job_id}/report` 查看报告。
 9. `GET /api/v1/evaluation-jobs/{job_id}/report/export` 导出结构化 JSON。
 
-验收样本位于 `examples/eval-samples/`；`tests/backend/test_mvp_acceptance.py` 展示了完整 API 调用闭环。
+验收样本位于 [examples/eval-samples](examples/eval-samples/README.md)。完整 API 调用闭环可参考 `tests/backend/test_mvp_acceptance.py`。
 
-## Docker Compose 快速启动
-
-已安装 Docker Engine 与 Docker Compose v2 时，在仓库根目录运行：
-
-```powershell
-docker compose up --build
-```
-
-启动后访问前端 <http://localhost:5173> 和 Swagger UI <http://localhost:8000/docs>。默认不需要 `.env`；如需覆盖端口或模式：
-
-```powershell
-Copy-Item .env.example .env
-docker compose up --build
-```
-
-停止并保留 SQLite 数据卷：
-
-```powershell
-docker compose down
-```
-
-连同本地 Compose 数据卷一起清理：
-
-```powershell
-docker compose down --volumes
-```
-
-## 本地质量检查
+## 质量检查
 
 后端、评测、覆盖率与仓库契约：
 
@@ -187,23 +252,57 @@ npm --prefix frontend test
 npm --prefix frontend run build
 ```
 
-GitHub Actions 在 pull request 和 `main` push 上运行相同的核心门禁，并验证 Docker Compose 构建。
+验收脚本：
 
-## 简历可写技术点
+```powershell
+.\tests\fixtures\validate-fixtures.ps1
+.\tests\acceptance\validate-wor-49.ps1 -RepoRoot .
+.\tests\acceptance\validate-wor-55.ps1 -RepoRoot .
+```
 
-请按自己的真实参与范围取舍和改写：
+CI 在 pull request 和 `main` push 上运行：
 
-- 设计并实现 RAG 应用质量评测与故障诊断 MVP，打通数据集、评测任务、样本诊断、人工复核和报告导出闭环。
+- Backend lint and tests
+- Frontend typecheck, tests, and build
+- Markdown, fixtures, and YAML
+- Docker Compose build
+
+## Mock 和 API 边界
+
+| 模式 | 数据来源 | 写入行为 | 适用场景 |
+| --- | --- | --- | --- |
+| `VITE_API_MODE=mock` | 仓库内脱敏 fixture | 只修改当前浏览器内存，刷新后重置。 | 稳定演示 UI、交互状态和诊断链路。 |
+| `VITE_API_MODE=api` | `VITE_API_BASE_URL` 指向的后端 | 调用真实 MVP API，数据写入 SQLite。 | API 契约联调、后端验收和二次开发。 |
+
+### No silent fallback
+
+API 请求失败时，页面必须显示错误或重试入口，不能静默回退到 mock 数据后显示成功。这条规则用于避免把演示数据误判为真实后端结果。
+
+### 当前没有夸大的能力
+
+当前版本仍是 MVP，不是生产级 RAG 平台。以下能力属于下一阶段：
+
+- 真实 LLM provider 调用
+- 真实向量数据库
+- 文档解析、Embedding/Rerank、索引构建与召回服务
+- LLM judge 自动评分
+- 真实浏览器 E2E 和截图回归
+- 生产鉴权、多租户、任务队列、对象存储、可观测性和数据库迁移
+
+## 简历写法
+
+可以按自己的真实参与范围取舍：
+
+- 设计并实现 RAG 应用质量评测与故障诊断 MVP，打通数据集、评测任务、指标计算、样本诊断、人工复核和报告导出闭环。
 - 使用 FastAPI、SQLAlchemy、Pydantic 与 SQLite 构建类型化资源 API，落地统一错误结构、健康检查和持久化模型。
-- 实现带幂等键的评测任务创建与 `queued → running → completed` 状态流转，降低重复提交导致的任务污染。
+- 实现带幂等键的评测任务创建与 `queued -> running -> completed` 状态流转，降低重复提交导致的任务污染。
 - 实现 Recall@K、MRR@K、NDCG@K、Context Precision/Recall 和 Citation Hit Rate 等可审计的确定性 RAG 指标。
-- 构建版本化故障诊断规则，输出原因、证据、置信度、改进建议与缺失输入，区分“未触发”和“无法判定”。
+- 构建版本化故障诊断规则，输出原因、证据、置信度、严重级别、改进建议与不可判定状态。
 - 使用 React、TypeScript、Vite 与 React Router 构建组件化诊断工作台，覆盖概览、数据集、任务、报告和样本证据页面。
 - 设计 mock/API 双 client 与显式错误边界，保证演示数据和真实 API 结果不被静默混用。
 - 建立 Pytest、Vitest、Ruff、TypeScript、覆盖率、fixture/文档校验和 Docker build 组成的 GitHub Actions 质量门禁。
-- 建立脱敏 JSONL fixture 与指标 oracle，用自动化测试保障评测结果、异常输入和样本复核状态可复现。
 
-## 仓库结构
+## 项目结构
 
 ```text
 backend/             FastAPI 服务、数据模型、评测与诊断逻辑
@@ -217,13 +316,31 @@ docker-compose.yml   本地一键启动编排
 
 ## 延伸文档
 
-- [克隆、配置与使用教程](docs/quickstart.md)
-- [本地开发、Docker 与 Windows Git hook 排障](docs/development.md)
-- [后端平台架构、API、数据模型与异步评测流程](docs/architecture/backend.md)
-- [评测指标、数据模型与执行流程](docs/evaluation/metrics.md)
-- [故障诊断规则](docs/evaluation/diagnosis-rules.md)
-- [评测数据集格式与样例](examples/datasets/README.md)
-- [MVP 测试计划、验收标准与质量门禁](docs/qa/test-plan.md)
-- [功能回归验收记录](docs/qa/wor-52-functional-acceptance.md)
-- [UI 与 README 二轮验收记录](docs/qa/wor-55-ui-readme-acceptance.md)
-- [测试目录与 fixture 自检](tests/README.md)
+| 文档 | 内容 |
+| --- | --- |
+| [克隆、配置与使用教程](docs/quickstart.md) | 从克隆到本地运行的完整步骤。 |
+| [本地开发与排障](docs/development.md) | Docker、Windows、Git hook 和开发模式说明。 |
+| [后端架构与 API](docs/architecture/backend.md) | FastAPI 模块、状态机、数据模型和接口边界。 |
+| [前端设计](docs/design/frontend.md) | 工作台信息架构和页面设计。 |
+| [线框图](docs/design/wireframes.md) | 核心页面布局说明。 |
+| [评测指标](docs/evaluation/metrics.md) | 指标体系、数据模型和执行流程。 |
+| [故障诊断规则](docs/evaluation/diagnosis-rules.md) | 失败归因规则和证据输出。 |
+| [评测数据集格式](examples/datasets/README.md) | 数据集 schema 和样例。 |
+| [可复现评测样本](examples/eval-samples/README.md) | 有效样本、异常样本和指标 oracle。 |
+| [MVP 测试计划](docs/qa/test-plan.md) | 测试策略、验收标准和风险清单。 |
+| [MVP 验收记录](docs/qa/mvp-acceptance.md) | MVP 验收和质量门禁记录。 |
+| [功能回归验收记录](docs/qa/wor-52-functional-acceptance.md) | 按钮交互、API 和文档回归验收。 |
+| [UI 与 README 二轮验收记录](docs/qa/wor-55-ui-readme-acceptance.md) | UI 一致性、技术表达和 README 验收。 |
+| [测试目录说明](tests/README.md) | 测试结构和 fixture 自检。 |
+
+## 下一阶段建议
+
+如果要从 MVP 继续升级到更接近真实生产的 RAGOps 平台，优先级建议如下：
+
+1. 接入真实文档解析、chunk 切分和索引构建。
+2. 接入 Embedding/Rerank 与向量数据库，例如 FAISS、Qdrant 或 Milvus。
+3. 接入真实 LLM provider，并记录 provider、model、Prompt、index 版本。
+4. 增加 API 模式浏览器端到端验收，补齐 CORS、代理、错误映射和持久化刷新。
+5. 增加 Playwright E2E 与截图回归，覆盖桌面和移动端视口。
+6. 增加任务队列、鉴权、多租户、对象存储和可观测性。
+
