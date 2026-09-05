@@ -30,12 +30,17 @@ RAGOps 是一个面向 RAG 系统的质量控制台。它把评测数据集、�
 | --- | --- | --- |
 | Mock UI 演示 | 已完成 | 浏览器里可体验概览、数据集、评测任务、报告、样本诊断和主要按钮反馈。 |
 | API MVP | 已完成 | FastAPI 提供数据集、样本导入、评测任务、复核状态和报告导出接口。 |
+| 模型执行基础 | 离线实现 | provider-neutral 契约、mock 与 OpenAI-compatible 适配器、超时/重试/脱敏和外部调用安全门已完成离线测试；真实连接未执行。 |
 | 确定性评测 | 已完成 | 支持 Recall@K、MRR@K、NDCG@K、Context Precision/Recall、Citation Hit Rate 等指标。 |
 | 故障诊断 | 已完成 | 根据固定规则输出检索缺失、上下文污染、引用缺失等样本级归因。 |
 | 工程质量门禁 | 已完成 | GitHub Actions 运行后端、前端、文档、fixture 和 Docker Compose 构建检查。 |
 | 真实 RAG 基础设施 | 下一阶段 | 真实 LLM provider、向量库、Embedding/Rerank、LLM judge 和生产部署尚未接入。 |
 
 > 重要边界：默认 `VITE_API_MODE=mock` 不会调用真实模型，也不会写入生产数据。它用于稳定演示产品链路和前端交互。真实 API 联调请使用 `VITE_API_MODE=api`。
+
+> 集成验收状态：D01 诊断 `rule_id`/React key 修复已在 `1698150bf8a63dfd534b4c10a2fc64287cbcf993` 完成独立复测；本地 API/SQLite 重启及浏览器 create/restart/disconnected 通过。Docker 容器和真实模型连接仍未在本机验证，详见 [离线基础集成验收记录](docs/qa/offline-readiness-acceptance.md)。
+
+> 负责人已完成 [阶段最终复核](docs/qa/offline-readiness-final-review.md)，复测 PR #27 已集成到阶段分支；总 PR #21 提交用户验收。
 
 ## 目录
 
@@ -216,6 +221,19 @@ uv run --project backend uvicorn app.main:app --app-dir backend --reload
 - OpenAPI JSON：<http://localhost:8000/openapi.json>
 - 就绪检查：<http://localhost:8000/health/ready>
 
+### 启动本地 API 模式前端
+
+先保持后端运行，再开一个 PowerShell 终端：
+
+```powershell
+$env:VITE_API_MODE = "api"
+$env:VITE_API_BASE_URL = "/api/v1"
+$env:VITE_API_PROXY_TARGET = "http://127.0.0.1:8000"
+npm --prefix frontend run dev
+```
+
+顶部应显示“前端 API 数据 / 后端执行器 mock / 提供方未配置”。`VITE_API_MODE=api` 只表示浏览器连接 RAGOps 后端，不表示真实模型已连接。
+
 ## API 验收路径
 
 在 Swagger UI 中按这个顺序验收真实 API MVP：
@@ -229,6 +247,7 @@ uv run --project backend uvicorn app.main:app --app-dir backend --reload
 7. `PATCH /api/v1/evaluation-jobs/{job_id}/samples/{sample_id}/review` 更新复核状态。
 8. `GET /api/v1/evaluation-jobs/{job_id}/report` 查看报告。
 9. `GET /api/v1/evaluation-jobs/{job_id}/report/export` 导出结构化 JSON。
+10. `GET /api/v1/model-execution/status` 查看不含秘密且不探测提供方的执行状态。
 
 验收样本位于 [examples/eval-samples](examples/eval-samples/README.md)。完整 API 调用闭环可参考 `tests/backend/test_mvp_acceptance.py`。
 
@@ -258,7 +277,12 @@ npm --prefix frontend run build
 .\tests\fixtures\validate-fixtures.ps1
 .\tests\acceptance\validate-wor-49.ps1 -RepoRoot .
 .\tests\acceptance\validate-wor-55.ps1 -RepoRoot .
+.\tests\acceptance\offline-readiness\validate-assets.ps1 -RepoRoot .
+.\tests\acceptance\offline-readiness\run-local-restart.ps1 -RepoRoot .
+node --check frontend/scripts/offline-readiness-browser.mjs
 ```
+
+API 模式浏览器 E2E 分 `create`、`restart_recheck`、`disconnected` 三阶段执行；前置服务、环境变量和证据目录见 [浏览器检查表](tests/acceptance/offline-readiness/browser-checklist.md)。脚本的非零退出代表真实语义或控制台缺陷，不能只凭截图改写成通过。
 
 CI 在 pull request 和 `main` push 上运行：
 
@@ -280,7 +304,7 @@ Mock 模式用于稳定演示产品链路。它读取仓库内脱敏 fixture，�
 
 ### API 模式
 
-API 模式用于真实 MVP 后端联调。它通过 `VITE_API_BASE_URL` 调用 FastAPI 服务，并把数据集、评测任务、样本复核和报告结果写入 SQLite。当前 API 仍使用确定性执行器，不调用真实 LLM 或向量检索服务。
+API 模式用于真实 MVP 后端联调。它通过 `VITE_API_BASE_URL` 调用 FastAPI 服务，并把数据集、评测任务、样本复核和报告结果写入 SQLite。后端执行器由 `RAGOPS_MODEL_EXECUTION_ADAPTER` 独立选择；默认 `mock`，且 `RAGOPS_MODEL_EXTERNAL_CALLS_ENABLED=false` 会在任何真实网络路径之前拒绝调用。OpenAI-compatible 适配器只有离线 MockTransport 证据，没有真实连接证据。
 
 ### No silent fallback
 
@@ -294,8 +318,9 @@ API 请求失败时，页面必须显示错误或重试入口，不能静默回�
 - 真实向量数据库
 - 文档解析、Embedding/Rerank、索引构建与召回服务
 - LLM judge 自动评分
-- 真实浏览器 E2E 和截图回归
 - 生产鉴权、多租户、任务队列、对象存储、可观测性和数据库迁移
+
+现有数据库升级已具备 `0001_mvp_baseline -> 0002_model_execution_contract` 幂等迁移；这里的“生产数据库迁移”指更完整的回滚、备份恢复、跨数据库和零停机能力。
 
 ## 简历写法
 
@@ -339,6 +364,7 @@ docker-compose.yml   本地一键启动编排
 | [MVP 验收记录](docs/qa/mvp-acceptance.md) | MVP 验收和质量门禁记录。 |
 | [功能回归验收记录](docs/qa/wor-52-functional-acceptance.md) | 按钮交互、API 和文档回归验收。 |
 | [UI 与 README 二轮验收记录](docs/qa/wor-55-ui-readme-acceptance.md) | UI 一致性、技术表达和 README 验收。 |
+| [离线基础集成验收记录](docs/qa/offline-readiness-acceptance.md) | 模型执行基础、迁移、本地 API、浏览器截图、Docker 限制和当前阻断。 |
 | [测试目录说明](tests/README.md) | 测试结构和 fixture 自检。 |
 
 ## 下一阶段建议
@@ -347,7 +373,7 @@ docker-compose.yml   本地一键启动编排
 
 1. 接入真实文档解析、chunk 切分和索引构建。
 2. 接入 Embedding/Rerank 与向量数据库，例如 FAISS、Qdrant 或 Milvus。
-3. 接入真实 LLM provider，并记录 provider、model、Prompt、index 版本。
-4. 增加 API 模式浏览器端到端验收，补齐 CORS、代理、错误映射和持久化刷新。
-5. 增加 Playwright E2E 与截图回归，覆盖桌面和移动端视口。
+3. 将现有 API 模式浏览器脚本接入稳定 CI runner，并增加跨浏览器视觉回归。
+4. 在用户明确授权、secret 隔离和预算限制下接入真实 LLM provider，并记录 provider、model、Prompt、index 版本。
+5. 增加跨浏览器截图回归，持续覆盖桌面和移动端视口。
 6. 增加任务队列、鉴权、多租户、对象存储和可观测性。

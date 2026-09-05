@@ -10,12 +10,13 @@ def aggregate_metric_results(
     *,
     total_count: int,
     succeeded_count: int,
+    execution_metric_version: str = "2.0.0",
 ) -> list[dict[str, Any]]:
     rows = list(sample_metric_results)
     report: list[dict[str, Any]] = [
         {
             "metric_name": "execution_success_rate",
-            "metric_version": "1.0.0",
+            "metric_version": execution_metric_version,
             "status": "ok",
             "value": succeeded_count / total_count if total_count else None,
             "evaluated_count": total_count,
@@ -37,17 +38,19 @@ def aggregate_metric_results(
         ]
         evaluated_count = len(values)
         excluded_count = total_count - evaluated_count
+        status_counts = _status_counts(results)
+        aggregate_status = "ok" if values else _aggregate_empty_status(status_counts)
         report.append(
             {
                 "metric_name": name,
                 "metric_version": version,
-                "status": "ok" if values else "not_applicable",
+                "status": aggregate_status,
                 "value": sum(values) / len(values) if values else None,
                 "evaluated_count": evaluated_count,
                 "excluded_count": excluded_count,
                 "details": {
                     "aggregation": "macro_mean",
-                    "sample_status_counts": _status_counts(results),
+                    "sample_status_counts": status_counts,
                 },
             }
         )
@@ -59,3 +62,10 @@ def _status_counts(results: list[dict[str, Any]]) -> dict[str, int]:
     for result in results:
         counts[str(result.get("status", "error"))] += 1
     return dict(sorted(counts.items()))
+
+
+def _aggregate_empty_status(counts: dict[str, int]) -> str:
+    for status in ("error", "unknown", "not_evaluated", "not_applicable", "legacy"):
+        if counts.get(status):
+            return status
+    return "not_evaluated"

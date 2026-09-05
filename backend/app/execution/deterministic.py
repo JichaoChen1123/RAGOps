@@ -19,11 +19,29 @@ class DeterministicExecutor:
         return cls(EvaluationProfile.from_metric_config(metric_config))
 
     def evaluate(self, sample: DatasetSample) -> ExecutionResult:
-        artifacts = self.evaluator.evaluate(sample)
-        answer = sample.answer or sample.reference_answer or "Insufficient evidence to answer."
+        contexts = list(sample.retrieved_contexts or [])
+        visible_text = next(
+            (
+                str(context.get("text", "")).strip()
+                for context in sorted(contexts, key=lambda item: int(item.get("rank", 0)))
+                if str(context.get("text", "")).strip()
+            ),
+            None,
+        )
+        answer = (
+            f"[mock] {visible_text[:500]}"
+            if visible_text
+            else f"[mock] Insufficient context for: {sample.question}"
+        )
+        artifacts = self.evaluator.evaluate(
+            sample,
+            answer=answer,
+            contexts=contexts,
+            citations=[],
+        )
         return ExecutionResult(
             answer=answer,
-            retrieval_results=sample.retrieved_contexts,
+            retrieval_results=contexts,
             metric_results=artifacts.metric_results,
             diagnoses=artifacts.diagnoses,
             latency_ms=0,

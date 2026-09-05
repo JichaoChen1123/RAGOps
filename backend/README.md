@@ -4,7 +4,7 @@ This service implements the smallest persistent RAGOps loop:
 
 `dataset -> immutable publish -> evaluation job -> sample results -> report`
 
-The local default is SQLite plus a deterministic in-process executor. It computes auditable RAG metrics and evidence-backed MVP diagnoses without an external LLM judge. The execution contract remains isolated so a queue-backed worker can replace local orchestration later.
+The local default is SQLite plus the provider-neutral `mock` adapter. Model network calls are disabled by default, even when provider credentials happen to exist. The same execution port also includes an OpenAI-compatible adapter that is verified offline with injected in-memory HTTP transports.
 
 For full repository setup, Docker startup, environment variables, frontend usage, and troubleshooting, see [`../docs/quickstart.md`](../docs/quickstart.md).
 
@@ -29,7 +29,7 @@ uv run --project backend ragops init-db
 uv run --project backend uvicorn app.main:app --app-dir backend --reload
 ```
 
-The default database is `sqlite:///./ragops.db`. Override settings with `RAGOPS_` environment variables, for example `RAGOPS_DATABASE_URL` and `RAGOPS_LOG_LEVEL`.
+The default database is `sqlite:///./ragops.db`. `ragops init-db` applies the idempotent `0001_mvp_baseline -> 0002_model_execution_contract` migration chain and preserves 1.0 rows. Override settings with `RAGOPS_` environment variables; see `.env.example` for the complete bounded timeout, retry, adapter, and provider configuration.
 
 Useful endpoints:
 
@@ -37,6 +37,9 @@ Useful endpoints:
 - Swagger UI: `http://127.0.0.1:8000/docs`
 - Liveness: `http://127.0.0.1:8000/health/live`
 - Readiness: `http://127.0.0.1:8000/health/ready`
+- Public execution status: `http://127.0.0.1:8000/api/v1/model-execution/status`
+
+Startup, readiness, and execution-status requests never probe a model provider. The status response exposes only configuration booleans and capabilities, not the Base URL, model value, credential, or credential fingerprint.
 
 ## Minimal API loop
 
@@ -66,7 +69,9 @@ Dataset creation requires a non-blank `name` and `owner`. `description` is optio
 }
 ```
 
-Evaluation creation accepts `dataset_id`, optional `name`, `model_version`, `prompt_version`, and metric configuration. `config_version` can still be supplied by existing clients; otherwise it is derived from the model and prompt versions. API lifecycle states are `queued`, `running`, `completed`, `failed`, and `cancelled`. A completed job exposes an `outcome` of `succeeded` or `partial_failed`, so lifecycle progress is not conflated with result quality.
+New evaluation requests use `schema_version: "2.0"` and an explicit `execution` object containing the adapter, versioned Prompt, complete generation settings, and context policy. Existing requests without `schema_version` and `execution` remain compatible and normalize to `mock`; legacy model labels never become the actual-model identity. Every accepted job persists an immutable non-secret execution snapshot and an independent run record per sample.
+
+API lifecycle states are `queued`, `running`, `completed`, `failed`, and `cancelled`; execution outcome is `succeeded`, `partial_failed`, or `failed`. Quality status/verdict/score are separate and remain `not_evaluated`/`unknown`/`null` unless an explicit quality gate can evaluate all required metrics. All-failed jobs still have a queryable report.
 
 Review updates accept exactly one of `pending`, `confirmed`, or `dismissed`:
 
@@ -82,7 +87,7 @@ All validation and domain failures use the stable envelope `error.code`, `error.
 
 ## Deterministic evaluation contract
 
-`backend/app/evaluation/` computes sample-level Recall@K, reciprocal rank, NDCG@K, context precision/recall/relevance ratio, citation hit rate, and normalized reference exact match. Reports macro-average only `status=ok` values and expose evaluated/excluded counts; missing gold, citations, answers, or judgements return `not_applicable` rather than a fabricated zero.
+`backend/app/evaluation/` computes deterministic metrics only after the current run answer is persisted. Reports macro-average only `status=ok` values and expose evaluated/excluded/status counts. Provided context is not scored as retrieval, legacy-unknown provenance stays unknown, citation resolution is separate from semantic support, and a missing semantic judge produces no support score.
 
 The rules currently cover retrieval evidence missing, context pollution, citation missing, and rerank regression. Every emitted result includes a versioned rule/profile, reason, evidence, confidence, and suggestions. If required evidence such as pre-rerank rank is absent, the rule emits `not_determinable` with `missing_inputs`.
 
@@ -91,10 +96,11 @@ Dataset contexts may optionally supply `relevance_grade` (0-3), `usefulness`, an
 ## MVP boundaries
 
 - SQLite and the in-process FastAPI background task are demo implementations, not a durable production queue.
-- The deterministic executor performs local auditable metrics only; it does not call an LLM or vector database.
+- `RAGOPS_MODEL_EXTERNAL_CALLS_ENABLED=false` is the safe default and rejects real transport before DNS/socket/retry work. Tests inject transport in process; that path is not selectable through API, environment, or persisted data.
+- The `mock` adapter performs local deterministic generation. It never reads reference labels, historical answers, sample metadata, or internal IDs.
 - Report export is JSON data only; server-side PDF/Markdown rendering and object storage are deferred.
-- `create_all` bootstraps a fresh local schema. Versioned migrations are required before evolving a shared or production database.
+- In-process FastAPI background tasks are not a durable production queue; Celery/RQ and Redis remain future deployment options.
 
 ## Database initialization
 
-`ragops init-db` creates the MVP schema from SQLAlchemy metadata. Automatic creation is enabled by default for local use and tests (`RAGOPS_AUTO_CREATE_SCHEMA=true`). Production deployment should disable it and replace this bootstrap path with versioned Alembic migrations before schema evolution begins.
+`ragops init-db` and automatic local initialization both run the versioned migration chain. A database without migration metadata is stamped at `0001` only after its required MVP tables and columns are verified, then upgraded to `0002`. Repeating the command is a no-op; a partial or unknown schema stops with an error and is never deleted or rebuilt. A fresh database is created directly at migration head.

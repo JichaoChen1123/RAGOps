@@ -25,7 +25,7 @@ import { TrendChart } from '../components/TrendChart';
 import type { WorkspaceOutletContext } from '../components/WorkspaceShell';
 import { useApiResource } from '../hooks/useApiResource';
 import { formatDateTime } from '../lib/format';
-import type { ProjectOverview } from '../types';
+import type { EvaluationTask, ProjectOverview } from '../types';
 
 const emptyOverview: ProjectOverview = {
   project: { id: 'demo', name: '客服 RAG 生产线', description: '', environment: 'production-shadow', updatedAt: new Date(0).toISOString() },
@@ -35,7 +35,7 @@ const emptyOverview: ProjectOverview = {
 const pipelineSteps = [
   { label: 'Dataset', title: '数据集', detail: 'v3.4 · 120 samples', state: 'READY', icon: Database },
   { label: 'Evaluation Job', title: '评测任务', detail: 'eval-20260826', state: 'DONE', icon: Play },
-  { label: 'Metrics', title: '指标计算', detail: '5 metrics · gate-aware', state: 'PASS', icon: Microscope },
+  { label: 'Metrics', title: '指标计算', detail: '状态化结果 · 不补零', state: 'STATE', icon: Microscope },
   { label: 'Failure Diagnosis', title: '失败诊断', detail: '4 rules · evidence-linked', state: 'TRACE', icon: ScanSearch },
   { label: 'Report', title: '评测报告', detail: 'JSON · audit ready', state: 'READY', icon: FileCheck2 },
   { label: 'Review', title: '人工复核', detail: '1 pending · feedback loop', state: 'OPEN', icon: BadgeCheck },
@@ -46,39 +46,39 @@ const capabilityGroups = [
     label: 'METRICS',
     title: '多维质量评测',
     icon: Microscope,
-    status: '已接入',
-    items: ['Recall@5', 'Faithfulness', 'Citation hit', 'P95 latency'],
+    status: '状态可追溯',
+    items: ['ok', 'not evaluated', 'unknown', 'error'],
   },
   {
     label: 'DIAGNOSIS RULES',
     title: '证据级故障归因',
     icon: ScanSearch,
-    status: '4 条规则',
-    items: ['检索缺失', '上下文污染', '引用冲突', 'Prompt 约束弱'],
+    status: '证据分层',
+    items: ['给定上下文', '本次检索', '来源未知', '引用支持性'],
   },
   {
     label: 'VERSION TRACE',
     title: '运行版本可追溯',
     icon: GitBranch,
-    status: '已固定',
-    items: ['Dataset v3.4', 'qwen3-32b', 'Prompt v12', 'Evaluation config'],
+    status: '快照固定',
+    items: ['Dataset schema', 'Adapter', 'Prompt', 'Generation config'],
   },
   {
     label: 'DELIVERY GATE',
     title: '工程质量门禁',
     icon: ShieldCheck,
-    status: 'PASS',
-    items: ['TypeScript', 'Vitest', 'Build', 'Score ≥ 80'],
+    status: '工程检查',
+    items: ['TypeScript', 'Vitest', 'Build', 'No silent fallback'],
   },
 ];
 
-function RuntimeContext() {
+function RuntimeContext({ task }: { task?: EvaluationTask }) {
   return (
     <section className="runtime-context" aria-label="当前评测运行上下文">
-      <div><span className={`runtime-signal runtime-${apiMode}`}><i />{apiMode === 'mock' ? 'MOCK FIXTURE' : 'LIVE API'}</span><small>数据模式</small></div>
-      <div><Bot size={15} /><span><strong>qwen3-32b@2026-08</strong><small>Model version</small></span></div>
-      <div><GitBranch size={15} /><span><strong>support-rag@v12</strong><small>Prompt version</small></span></div>
-      <div><ShieldCheck size={15} /><span><strong>PASS · 82.4 ≥ 80</strong><small>Quality gate</small></span></div>
+      <div><span className={`runtime-signal runtime-${apiMode}`}><i />{apiMode === 'mock' ? 'MOCK FIXTURE' : 'API DATA'}</span><small>前端数据源</small></div>
+      <div><Bot size={15} /><span><strong>{task?.adapterId ?? '未知'}</strong><small>后端执行器</small></span></div>
+      <div><GitBranch size={15} /><span><strong>{task?.modelVersion ?? '未知'}</strong><small>请求模型（来自快照）</small></span></div>
+      <div><ShieldCheck size={15} /><span><strong>{task?.qualityStatus === 'evaluated' ? task.qualityVerdict : task?.qualityStatus === 'not_evaluated' ? '未评估' : '未知'}</strong><small>质量状态 / 非执行状态</small></span></div>
     </section>
   );
 }
@@ -149,55 +149,54 @@ export function OverviewPage() {
   return (
     <>
       <PageIntro
-        eyebrow="PRODUCTION SHADOW"
+        eyebrow={apiMode === 'mock' ? 'OFFLINE FIXTURE WORKBENCH' : 'RAGOPS API WORKBENCH'}
         title={data.project.name}
-        description="追踪离线质量、失败样本与端到端性能；所有门禁结论均可下钻到证据。"
+        description="追踪任务执行、质量评估与样本证据；未知和未评估保持原样，不从运行成功推导质量。"
         actions={<><button className="button button-secondary" type="button" onClick={refreshOverview}><RefreshCw size={15} />刷新数据</button><Link className="button button-primary" to={`/projects/${projectId}/evaluations`}><Play size={15} />新建评测</Link></>}
       />
-      <RuntimeContext />
+      <RuntimeContext task={data.recentTasks[0]} />
       <PartialDataBanner message={state.partialMessage} />
+      {data.warnings?.map((warning) => <PartialDataBanner key={warning} message={warning} />)}
       {data.metrics.length === 0 ? (
-        <EmptyState title="尚无评测数据" description="创建首个数据集并运行评测后，这里将展示项目质量基线。" action={<Link className="button button-primary" to={`/projects/${projectId}/datasets`}>前往数据集</Link>} />
+        <EmptyState title="暂无已评质量指标" description="任务执行记录与质量评估分别展示。" action={<Link className="button button-primary" to={`/projects/${projectId}/datasets`}>前往数据集</Link>} />
       ) : (
         <>
           <div className="metric-grid">{data.metrics.map((metric) => <MetricCard key={metric.key} metric={metric} />)}</div>
           <TechnicalCapabilities />
           <div className="dashboard-grid">
-            <Panel title="质量趋势" eyebrow="最近 7 次评测" action={<button className="text-button" type="button" onClick={() => setTrendOpen(true)}>查看趋势看板 <ArrowRight size={14} /></button>} className="panel-wide">
+            <Panel title="质量趋势" eyebrow="仅展示已评估记录" action={<button className="text-button" type="button" onClick={() => setTrendOpen(true)}>查看趋势看板 <ArrowRight size={14} /></button>} className="panel-wide">
               <span id="quality-trends" className="anchor-target" />
-              <TrendChart points={data.trend} />
-              <div className="chart-legend"><span><i className="legend-blue" />综合质量分</span><span><i className="legend-muted" />目标线 80</span></div>
+              {data.trend.length > 0 ? <><TrendChart points={data.trend} /><div className="chart-legend"><span><i className="legend-blue" />已评质量分</span><span><i className="legend-muted" />报告记录</span></div></> : <EmptyState title="暂无可用质量趋势" description="执行成功但未做质量评估的任务不会生成 0 或 100 分趋势点。" />}
             </Panel>
             <Panel title="失败类型分布" eyebrow="最新已完成任务">
               <FailureChart buckets={data.failureDistribution} />
             </Panel>
           </div>
+        </>
+      )}
           <Panel title="最近评测任务" eyebrow="任务与版本" action={<Link className="text-button" to={`/projects/${projectId}/evaluations`}>全部任务 <ArrowRight size={14} /></Link>}>
             <div className="table-wrap">
               <table>
-                <thead><tr><th>任务</th><th>状态</th><th>数据集</th><th>版本</th><th>样本</th><th>综合分</th><th>更新时间</th><th /></tr></thead>
+                <thead><tr><th>任务</th><th>生命周期</th><th>执行</th><th>质量</th><th>数据集</th><th>执行器</th><th>质量分</th><th>更新时间</th><th /></tr></thead>
                 <tbody>{data.recentTasks.map((task) => (
                   <tr key={task.id}>
-                    <td><strong>{task.name}</strong><small>{task.id}</small></td>
+                    <td><strong>{task.name} {task.isMock === true && <em className="mock-label">SIMULATED</em>}</strong><small>{task.id}</small></td>
                     <td><StatusBadge value={task.status} /></td>
+                    <td>{task.outcome ? <StatusBadge value={task.outcome} /> : '尚无结果'}</td>
+                    <td><StatusBadge value={task.qualityStatus} /></td>
                     <td>{task.datasetName}</td>
-                    <td><code>{task.promptVersion}</code></td>
-                    <td>{task.totalSamples}</td>
-                    <td className="score-cell">{task.score ?? '—'}</td>
+                    <td><code>{task.adapterId ?? '未知'}</code></td>
+                    <td className="score-cell">{task.qualityScore ?? '未知'}</td>
                     <td><span className="inline-icon"><CalendarRange size={14} />{formatDateTime(task.completedAt ?? task.createdAt)}</span></td>
-                    <td>{task.status === 'completed' && <Link aria-label={`查看 ${task.name} 报告`} className="row-link" to={`/projects/${projectId}/evaluations/${task.id}/report`}><ArrowRight size={16} /></Link>}</td>
+                    <td>{(task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') && <Link aria-label={`查看 ${task.name} 报告`} className="row-link" to={`/projects/${projectId}/evaluations/${task.id}/report`}><ArrowRight size={16} /></Link>}</td>
                   </tr>
                 ))}</tbody>
               </table>
             </div>
           </Panel>
-        </>
-      )}
       <Dialog open={trendOpen} title="质量与延迟趋势" eyebrow="LAST 7 EVALUATIONS" onClose={() => setTrendOpen(false)}>
-        <TrendChart points={data.trend} />
-        <div className="chart-legend"><span><i className="legend-blue" />综合质量分</span><span><i className="legend-muted" />目标线 80</span></div>
-        <div className="table-wrap compact-table"><table><thead><tr><th>评测日期</th><th>综合质量分</th><th>端到端延迟</th><th>门禁</th></tr></thead><tbody>{data.trend.map((point) => <tr key={point.label}><td>{point.label}</td><td className="score-cell">{point.score}</td><td>{point.latencyMs}ms</td><td><StatusBadge value={point.score >= 80 ? 'passed' : 'failed'} /></td></tr>)}</tbody></table></div>
-        <p className="form-hint">此弹窗展示当前项目概览已返回的趋势数据，不额外请求趋势服务。</p>
+        {data.trend.length > 0 ? <><TrendChart points={data.trend} /><div className="chart-legend"><span><i className="legend-blue" />已评质量分</span></div><div className="table-wrap compact-table"><table><thead><tr><th>评测日期</th><th>质量分</th><th>端到端延迟</th></tr></thead><tbody>{data.trend.map((point) => <tr key={point.label}><td>{point.label}</td><td className="score-cell">{point.score}</td><td>{point.latencyMs}ms</td></tr>)}</tbody></table></div></> : <EmptyState title="质量趋势未评估" description="当前记录只有执行结果，未生成语义质量分。" />}
+        <p className="form-hint">只展示报告明确返回的质量分；不使用执行成功率推算质量，也不按阈值在浏览器补造门禁结论。</p>
       </Dialog>
       <Toast message={feedback} onDismiss={() => setFeedback(null)} />
     </>

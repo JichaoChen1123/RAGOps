@@ -1,8 +1,9 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../frontend/src/App';
+import { apiClient } from '../../frontend/src/api/client';
 
 function renderOverview() {
   return render(
@@ -13,6 +14,21 @@ function renderOverview() {
 }
 
 describe('workspace navigation and RAGOps capabilities', () => {
+  it('keeps recent tasks visible when there are no evaluated quality metrics', async () => {
+    const overview = await apiClient.getProjectOverview('demo');
+    const spy = vi.spyOn(apiClient, 'getProjectOverview').mockResolvedValue({
+      ...overview, metrics: [], trend: [],
+    });
+    try {
+      renderOverview();
+      await screen.findByText('暂无已评质量指标');
+      expect(screen.getByText('最近评测任务')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: `查看 ${overview.recentTasks[0].name} 报告` })).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('distinguishes active, available, coming-soon and disabled navigation entries', async () => {
     const user = userEvent.setup();
     renderOverview();
@@ -47,15 +63,17 @@ describe('workspace navigation and RAGOps capabilities', () => {
     expect(screen.getByRole('region', { name: '当前评测运行上下文' })).toHaveTextContent('MOCK FIXTURE');
   });
 
-  it('opens the read-only model and prompt context from the sidebar', async () => {
+  it('opens the read-only three-axis runtime status from the sidebar', async () => {
     const user = userEvent.setup();
     renderOverview();
     await screen.findByRole('heading', { level: 2, name: '客服 RAG 生产线' });
 
     await user.click(screen.getByRole('button', { name: '模型与 Prompt，只读快照' }));
     const snapshot = screen.getByRole('dialog', { name: '模型与 Prompt · 只读快照' });
-    expect(snapshot).toHaveTextContent('qwen3-32b@2026-08');
-    expect(snapshot).toHaveTextContent('support-rag@v12');
-    expect(snapshot).toHaveTextContent('客服黄金问答集 · v3.4');
+    expect(snapshot).toHaveTextContent('Mock fixture（浏览器内存）');
+    expect(snapshot).toHaveTextContent('BACKEND EXECUTION ADAPTER');
+    expect(snapshot).toHaveTextContent('mock');
+    expect(snapshot).toHaveTextContent('openai_compatible · 未配置');
+    expect(snapshot).toHaveTextContent('本阶段不提供真实验证入口');
   });
 });

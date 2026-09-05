@@ -84,11 +84,11 @@ foreach ($step in @('Dataset', 'Evaluation Job', 'Metrics', 'Failure Diagnosis',
 
 foreach ($capability in @(
     'MOCK FIXTURE',
-    'Prompt version',
-    'qwen3-32b@2026-08',
-    'support-rag@v12',
-    'Recall@5',
-    'Faithfulness',
+    'Dataset schema',
+    'Adapter',
+    'Prompt',
+    'Generation config',
+    'not evaluated',
     'DIAGNOSIS RULES',
     'VERSION TRACE',
     'DELIVERY GATE'

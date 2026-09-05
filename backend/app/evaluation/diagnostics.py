@@ -27,6 +27,13 @@ def _retrieval_missing(
     profile: EvaluationProfile,
 ) -> DiagnosisResult | None:
     rule_id = "retrieval.missing_evidence"
+    if features.retrieval_metric_status != "ok":
+        return _unknown(
+            rule_id,
+            profile,
+            "Current-run retrieval provenance is unavailable.",
+            ["contexts[].origin=retrieved and matching retrieval_run_id"],
+        )
     if not features.gold_ids:
         return _unknown(
             rule_id,
@@ -148,6 +155,13 @@ def _rerank_regression(
     profile: EvaluationProfile,
 ) -> DiagnosisResult | None:
     rule_id = "rerank.no_gain_or_regression"
+    if features.retrieval_metric_status != "ok":
+        return _unknown(
+            rule_id,
+            profile,
+            "Current-run retrieval provenance is unavailable for rerank comparison.",
+            ["retrieved contexts from the current run"],
+        )
     relevant = [item for item in features.ranked_items if item_relevance(item)]
     comparable = [item for item in relevant if item.rank_before is not None]
     if not comparable:

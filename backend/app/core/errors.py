@@ -68,20 +68,48 @@ def install_error_handlers(app: FastAPI) -> None:
         request: Request,
         exc: RequestValidationError,
     ) -> JSONResponse:
-        errors = [
-            {
-                "field": ".".join(str(part) for part in error["loc"] if part != "body"),
-                "message": error["msg"],
-                "type": error["type"],
-            }
-            for error in exc.errors()
-        ]
+        errors = []
+        response_code = "VALIDATION_ERROR"
+        for error in exc.errors():
+            location = [part for part in error["loc"] if part != "body"]
+            row_index = next((part for part in location if isinstance(part, int)), None)
+            sample_id = None
+            if row_index is not None and isinstance(exc.body, dict):
+                samples = exc.body.get("samples")
+                if isinstance(samples, list) and row_index < len(samples):
+                    raw_sample = samples[row_index]
+                    if isinstance(raw_sample, dict) and isinstance(raw_sample.get("sample_id"), str):
+                        sample_id = raw_sample["sample_id"]
+            message = error["msg"]
+            item_code = "VALIDATION_ERROR"
+            if location and location[-1] == "schema_version" and error["type"] == "literal_error":
+                item_code = "UNSUPPORTED_SCHEMA_VERSION"
+                response_code = item_code
+            elif "AMBIGUOUS_EXECUTION_CONFIG" in message:
+                response_code = "AMBIGUOUS_EXECUTION_CONFIG"
+                item_code = "AMBIGUOUS_EXECUTION_CONFIG"
+            elif "AMBIGUOUS_SCHEMA_FIELDS" in message:
+                response_code = "AMBIGUOUS_SCHEMA_FIELDS"
+                item_code = "AMBIGUOUS_SCHEMA_FIELDS"
+            errors.append(
+                {
+                    "row": row_index + 1 if row_index is not None else None,
+                    "sample_id": sample_id,
+                    "field": ".".join(str(part) for part in location),
+                    "code": item_code,
+                    "message": message,
+                    "type": error["type"],
+                }
+            )
+        details: dict[str, Any] = {"errors": errors}
+        if any(item["code"] == "UNSUPPORTED_SCHEMA_VERSION" for item in errors):
+            details["supported_versions"] = ["1.0", "2.0"]
         return _error_response(
             request,
             status_code=422,
-            code="VALIDATION_ERROR",
+            code=response_code,
             message="Request validation failed.",
-            details={"errors": errors},
+            details=details,
         )
 
     @app.exception_handler(Exception)

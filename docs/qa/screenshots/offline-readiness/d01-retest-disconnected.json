@@ -1,0 +1,47 @@
+{
+  "baseline_sha": "1698150bf8a63dfd534b4c10a2fc64287cbcf993",
+  "script_version": "wor-68-d01-retest-v1",
+  "phase": "disconnected",
+  "frontend_url": "http://127.0.0.1:15173",
+  "dataset_name": "退款政策示例 JSONL",
+  "task_id": "01a07137-fae5-7d14-984e-3c09e71e27cd",
+  "sample_id": "01a07137-fb0c-739c-892b-70ef48c0fee1",
+  "report_url": "http://127.0.0.1:15173/projects/demo/evaluations/01a07137-fae5-7d14-984e-3c09e71e27cd/report",
+  "diagnosis_url": "http://127.0.0.1:15173/projects/demo/evaluations/01a07137-fae5-7d14-984e-3c09e71e27cd/samples/01a07137-fb0c-739c-892b-70ef48c0fee1",
+  "http_error": "数据载入失败请求失败（HTTP 502） 重新请求",
+  "desktop_layout": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "clientWidth": 1440,
+    "scrollWidth": 1440,
+    "bodyTextLength": 284
+  },
+  "disconnected_state": "passed_without_mock_fallback",
+  "console_errors_context": "expected local API 502 responses after the backend was deliberately stopped",
+  "browser": "local Chromium channel via playwright-core",
+  "browser_executable": "msedge.exe",
+  "request_count": 41,
+  "request_hosts": [
+    "127.0.0.1:15173"
+  ],
+  "external_requests": [],
+  "console_errors": [
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+  ],
+  "console_warnings": [],
+  "duplicate_key_warnings": [],
+  "acceptance_failures": [],
+  "acceptance_status": "passed",
+  "exit_code": 0,
+  "error": null,
+  "evidence_path": "docs/qa/screenshots/offline-readiness/d01-retest-disconnected.json"
+}

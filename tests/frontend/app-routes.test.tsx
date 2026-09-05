@@ -1,8 +1,9 @@
 import { render, screen } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../frontend/src/App';
+import { apiClient } from '../../frontend/src/api/client';
 
 function renderRoute(path: string) {
   return render(
@@ -18,7 +19,7 @@ describe('RAGOps MVP routes', () => {
     renderRoute('/projects/demo/evaluations');
 
     expect(await screen.findByRole('heading', { level: 2, name: '评测任务' })).toBeInTheDocument();
-    await user.click(await screen.findByRole('link', { name: /查看报告/ }));
+    await user.click((await screen.findAllByRole('link', { name: /查看报告/ }))[0]);
 
     expect(await screen.findByRole('heading', { level: 2, name: '客服知识库 v3 回归评测' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: '诊断样本 sample-042' }));
@@ -48,11 +49,30 @@ describe('RAGOps MVP routes', () => {
   it('switches to partial data and preserves an undetermined gate', async () => {
     const user = userEvent.setup();
     renderRoute('/projects/demo/evaluations/eval-20260826/report');
-    expect(await screen.findByText('发布门禁结论')).toBeInTheDocument();
+    expect(await screen.findByText('质量门结论')).toBeInTheDocument();
 
     await user.selectOptions(screen.getByRole('combobox', { name: '数据场景' }), 'partial');
-    expect(await screen.findByText(/部分指标仍在计算/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: '无法判断' })).toBeInTheDocument();
-    expect(screen.getByText('不可计算')).toBeInTheDocument();
+    expect((await screen.findAllByText(/部分指标仍在计算/)).length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { level: 3, name: '未知' })).toBeInTheDocument();
+    expect(screen.getAllByText('未评估').length).toBeGreaterThan(0);
+  });
+
+  it('renders distinct secondary diagnoses with the same label without duplicate-key warnings', async () => {
+    const fixture = await apiClient.getSampleDiagnosis('demo', 'eval-20260826', 'sample-042');
+    const repeatedLabel = '重复诊断标签';
+    vi.spyOn(apiClient, 'getSampleDiagnosis').mockResolvedValue({
+      ...fixture,
+      secondaryDiagnoses: [
+        { label: repeatedLabel, confidence: 0.8, severity: 'warning', explanation: '引用证据不足。', evidenceIds: ['citation-1'] },
+        { label: repeatedLabel, confidence: 0.6, severity: 'unknown', explanation: '重排收益无法确认。', evidenceIds: ['rerank-1'] },
+      ],
+    });
+    const consoleError = vi.spyOn(console, 'error').mockImplementation(() => undefined);
+
+    renderRoute('/projects/demo/evaluations/eval-20260826/samples/sample-042');
+
+    expect(await screen.findAllByText(repeatedLabel)).toHaveLength(2);
+    const errorOutput = consoleError.mock.calls.flat().join(' ');
+    expect(errorOutput).not.toMatch(/same key|unique ["']key["']|Encountered two children/i);
   });
 });
