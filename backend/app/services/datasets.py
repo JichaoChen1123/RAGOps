@@ -53,23 +53,45 @@ def _add_samples(
 ) -> int:
     start_ordinal = dataset.sample_count
     for index, sample in enumerate(samples, start=1):
-        raw = sample.model_dump(mode="json")
+        labels = sample.normalized_labels
+        contexts = [item.model_dump(mode="json") for item in sample.normalized_contexts]
+        origins = {item["origin"] for item in contexts}
+        context_origin = next(iter(origins)) if len(origins) == 1 else "mixed"
+        raw = {
+            "schema_version": sample.schema_version,
+            "sample_id": sample.sample_id,
+            "question": sample.question,
+            "labels": labels.model_dump(mode="json"),
+            "contexts": contexts,
+            "historical_answer": sample.normalized_historical_answer,
+            "historical_citations": sample.normalized_historical_citations,
+            "tags": sample.tags,
+            "metadata": sample.metadata,
+        }
         session.add(
             DatasetSample(
                 dataset_id=dataset.id,
                 ordinal=start_ordinal + index,
                 external_id=sample.sample_id,
                 question=sample.question,
-                reference_answer=sample.reference_answer,
-                gold_document_ids=sample.gold_document_ids,
-                gold_evidence_ids=sample.gold_evidence_ids,
-                retrieved_contexts=[item.model_dump(mode="json") for item in sample.retrieved_contexts],
-                answer=sample.answer,
-                citations=[item.model_dump(mode="json") for item in sample.citations],
+                reference_answer=labels.reference_answer,
+                gold_document_ids=labels.gold_document_ids,
+                gold_evidence_ids=labels.gold_evidence_ids,
+                retrieved_contexts=contexts,
+                answer=sample.answer if sample.schema_version == "1.0" else None,
+                citations=(
+                    [item.model_dump(mode="json") for item in sample.citations]
+                    if sample.schema_version == "1.0"
+                    else []
+                ),
                 tags=sample.tags,
-                expected_diagnoses=sample.expected_diagnoses,
+                expected_diagnoses=labels.expected_diagnoses,
                 metadata_json=sample.metadata,
                 content_sha256=_canonical_hash(raw),
+                normalized_schema_version=sample.schema_version,
+                context_origin=context_origin if contexts else "unknown",
+                historical_answer=sample.normalized_historical_answer,
+                historical_citations=sample.normalized_historical_citations,
             )
         )
     dataset.sample_count += len(samples)
@@ -144,6 +166,31 @@ def import_samples(
             details={"dataset_id": dataset_id},
         )
 
+    mismatched = [
+        sample.sample_id
+        for sample in payload.samples
+        if sample.schema_version != dataset.schema_version
+    ]
+    if mismatched:
+        raise DomainError(
+            "VALIDATION_ERROR",
+            "Imported sample schema_version must match the dataset schema_version.",
+            status_code=status.HTTP_422_UNPROCESSABLE_ENTITY,
+            details={
+                "errors": [
+                    {
+                        "row": index + 1,
+                        "sample_id": sample.sample_id,
+                        "field": "schema_version",
+                        "code": "SCHEMA_VERSION_MISMATCH",
+                        "message": "sample schema_version must match dataset schema_version",
+                    }
+                    for index, sample in enumerate(payload.samples)
+                    if sample.sample_id in mismatched
+                ]
+            },
+        )
+
     incoming_ids = {sample.sample_id for sample in payload.samples}
     existing_ids = set(
         session.scalars(
@@ -207,12 +254,28 @@ def to_response(dataset: Dataset) -> DatasetResponse:
 
 
 def sample_to_response(sample: DatasetSample) -> DatasetSampleResponse:
+    historical_output = None
+    if sample.historical_answer is not None:
+        historical_output = {
+            "answer": sample.historical_answer,
+            "citations": sample.historical_citations,
+            "recorded_at": sample.created_at,
+        }
     return DatasetSampleResponse(
+        schema_version=sample.normalized_schema_version,
         sample_id=sample.external_id,
         question=sample.question,
+        labels={
+            "reference_answer": sample.reference_answer,
+            "gold_document_ids": sample.gold_document_ids,
+            "gold_evidence_ids": sample.gold_evidence_ids,
+            "expected_diagnoses": sample.expected_diagnoses,
+        },
+        contexts=sample.retrieved_contexts,
+        historical_output=historical_output,
         reference_answer=sample.reference_answer,
         retrieved_contexts=sample.retrieved_contexts,
-        answer=sample.answer,
+        answer=sample.historical_answer,
         tags=sample.tags,
         metadata=sample.metadata_json,
     )

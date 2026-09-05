@@ -28,7 +28,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     async def lifespan(_: FastAPI) -> AsyncIterator[None]:
         configure_logging(resolved_settings.log_level)
         if resolved_settings.auto_create_schema:
-            database.create_all()
+            database.migrate()
         yield
         database.dispose()
 

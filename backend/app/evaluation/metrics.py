@@ -174,6 +174,11 @@ def context_recall(
 def citation_hit_rate(citations: Sequence[CitationJudgement]) -> MetricResult:
     if not citations:
         return _not_applicable("citation_hit_rate", "answer contains no parsed citations")
+    if any(citation.supports_claim is None for citation in citations):
+        return _not_evaluated(
+            "citation_hit_rate",
+            "semantic citation support was not judged",
+        )
     hits = [citation for citation in citations if citation.resolves and citation.supports_claim]
     invalid = [
         citation.citation_id
@@ -189,6 +194,53 @@ def citation_hit_rate(citations: Sequence[CitationJudgement]) -> MetricResult:
             "hit_citation_ids": [citation.citation_id for citation in hits],
             "invalid_citation_ids": invalid,
         },
+    )
+
+
+def citation_resolution_rate(citations: Sequence[CitationJudgement]) -> MetricResult:
+    if not citations:
+        return MetricResult(
+            metric_name="citation_resolution_rate",
+            metric_version="2.0.0",
+            value=None,
+            status="not_applicable",
+            details={"reason": "answer contains no parsed citations"},
+        )
+    resolved = [citation for citation in citations if citation.resolves]
+    return MetricResult(
+        metric_name="citation_resolution_rate",
+        metric_version="2.0.0",
+        value=len(resolved) / len(citations),
+        details={
+            "citation_count": len(citations),
+            "resolved_count": len(resolved),
+            "unresolved_citation_ids": [
+                citation.citation_id for citation in citations if not citation.resolves
+            ],
+        },
+    )
+
+
+def citation_support_rate(citations: Sequence[CitationJudgement]) -> MetricResult:
+    if not citations:
+        return MetricResult(
+            metric_name="citation_support_rate",
+            metric_version="2.0.0",
+            value=None,
+            status="not_applicable",
+            details={"reason": "answer contains no parsed citations"},
+        )
+    if any(citation.supports_claim is None for citation in citations):
+        return _not_evaluated(
+            "citation_support_rate",
+            "semantic citation support was not judged",
+        )
+    supported = [citation for citation in citations if citation.supports_claim]
+    return MetricResult(
+        metric_name="citation_support_rate",
+        metric_version="2.0.0",
+        value=len(supported) / len(citations),
+        details={"citation_count": len(citations), "supported_count": len(supported)},
     )
 
 
@@ -230,4 +282,26 @@ def _not_applicable(
         value=None,
         status="not_applicable",
         details={"reason": reason, **(details or {})},
+    )
+
+
+def unavailable_metric(metric_name: str, status: str, reason: str) -> MetricResult:
+    if status == "unknown":
+        return MetricResult(
+            metric_name=metric_name,
+            metric_version="2.0.0",
+            value=None,
+            status="unknown",
+            details={"reason": reason},
+        )
+    return _not_evaluated(metric_name, reason)
+
+
+def _not_evaluated(metric_name: str, reason: str) -> MetricResult:
+    return MetricResult(
+        metric_name=metric_name,
+        metric_version="2.0.0",
+        value=None,
+        status="not_evaluated",
+        details={"reason": reason},
     )

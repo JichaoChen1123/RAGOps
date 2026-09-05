@@ -59,6 +59,16 @@ class DatasetSample(Base):
     expected_diagnoses: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
     metadata_json: Mapped[dict[str, Any]] = mapped_column("metadata", JSON, nullable=False, default=dict)
     content_sha256: Mapped[str] = mapped_column(String(64), nullable=False)
+    normalized_schema_version: Mapped[str] = mapped_column(
+        String(20), nullable=False, default="2.0"
+    )
+    context_origin: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="legacy_unknown"
+    )
+    historical_answer: Mapped[str | None] = mapped_column(Text)
+    historical_citations: Mapped[list[dict[str, Any]]] = mapped_column(
+        JSON, nullable=False, default=list
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
     dataset: Mapped[Dataset] = relationship(back_populates="samples")
@@ -87,6 +97,14 @@ class EvaluationJob(Base):
     failure_message: Mapped[str | None] = mapped_column(Text)
     idempotency_key: Mapped[str | None] = mapped_column(String(128), unique=True)
     request_fingerprint: Mapped[str] = mapped_column(String(64), nullable=False)
+    contract_version: Mapped[str] = mapped_column(String(20), nullable=False, default="2.0")
+    adapter_id: Mapped[str] = mapped_column(String(80), nullable=False, default="mock")
+    execution_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    quality_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="not_evaluated"
+    )
+    quality_verdict: Mapped[str] = mapped_column(String(32), nullable=False, default="unknown")
+    quality_score: Mapped[float | None] = mapped_column(Float)
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -121,6 +139,11 @@ class EvaluationJobSample(Base):
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     failure_code: Mapped[str | None] = mapped_column(String(80))
     failure_message: Mapped[str | None] = mapped_column(Text)
+    run_id: Mapped[str | None] = mapped_column(String(36), index=True)
+    run_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    quality_status: Mapped[str] = mapped_column(
+        String(32), nullable=False, default="not_evaluated"
+    )
     created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
     started_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
     finished_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
@@ -145,6 +168,10 @@ class EvaluationReport(Base):
     succeeded_count: Mapped[int] = mapped_column(Integer, nullable=False)
     failed_count: Mapped[int] = mapped_column(Integer, nullable=False)
     metrics: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    schema_version: Mapped[str] = mapped_column(String(20), nullable=False, default="2.0")
+    execution_summary: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    quality_summary: Mapped[dict[str, Any] | None] = mapped_column(JSON)
+    execution_snapshot: Mapped[dict[str, Any] | None] = mapped_column(JSON)
     generated_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
 
     job: Mapped[EvaluationJob] = relationship(back_populates="report")
