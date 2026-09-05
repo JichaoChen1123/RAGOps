@@ -15,6 +15,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from app.core.config import Settings
+from app.execution.adapters import DefaultModelAdapterFactory
+from app.execution.model import ModelTransportRequest, ModelTransportResponse
 from app.main import create_app
 
 
@@ -86,6 +88,31 @@ def _install_recording_transport(
     original_sync_send = httpx.Client.send
     original_async_send = httpx.AsyncClient.send
     original_getaddrinfo = socket.getaddrinfo
+    original_create = DefaultModelAdapterFactory.create
+
+    class ExplicitTestTransport:
+        def send(self, request: ModelTransportRequest) -> ModelTransportResponse:
+            wire_request = httpx.Request(
+                request.method, request.url, headers=request.headers, json=request.json_body
+            )
+            try:
+                response = mock_transport.handle_request(wire_request)
+            except httpx.TimeoutException as exc:
+                raise TimeoutError from exc
+            except httpx.TransportError as exc:
+                raise ConnectionError from exc
+            return ModelTransportResponse(
+                status_code=response.status_code,
+                headers=dict(response.headers),
+                body=response.content,
+            )
+
+    def create_adapter(factory: DefaultModelAdapterFactory, adapter_id: str, *args: Any, **kwargs: Any):
+        # Only successful-call scenarios opt into transport injection. Policy/config
+        # rejection scenarios still exercise the production factory's fail-closed path.
+        if factory.settings.model_external_calls_enabled:
+            kwargs["test_transport"] = ExplicitTestTransport()
+        return original_create(factory, adapter_id, *args, **kwargs)
 
     def sync_send(
         client: httpx.Client,
@@ -115,6 +142,7 @@ def _install_recording_transport(
     monkeypatch.setattr(httpx.Client, "send", sync_send)
     monkeypatch.setattr(httpx.AsyncClient, "send", async_send)
     monkeypatch.setattr(socket, "getaddrinfo", guarded_getaddrinfo)
+    monkeypatch.setattr(DefaultModelAdapterFactory, "create", create_adapter)
     return provider
 
 

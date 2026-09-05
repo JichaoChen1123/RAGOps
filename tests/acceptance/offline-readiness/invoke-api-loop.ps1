@@ -45,6 +45,7 @@ function Invoke-Json {
         Uri = $Uri
         Headers = $Headers
         ContentType = 'application/json; charset=utf-8'
+        TimeoutSec = $TimeoutSeconds
     }
     if ($null -ne $Body) {
         $arguments.Body = $Body | ConvertTo-Json -Depth 20 -Compress
@@ -85,9 +86,9 @@ else {
     $sample = @{
         schema_version = '2.0'
         sample_id = 'api-loop-sample-001'
-        question = '离线 API 闭环是否调用真实模型？'
+        question = 'Does the offline API loop call a real model?'
         labels = @{
-            reference_answer = '不会。'
+            reference_answer = 'No.'
             gold_document_ids = @('doc-offline')
             gold_evidence_ids = @('ev-offline')
             expected_diagnoses = @()
@@ -101,7 +102,7 @@ else {
                 doc_id = 'doc-offline'
                 chunk_id = 'chunk-offline'
                 evidence_ids = @('ev-offline')
-                text = '离线 API 闭环只使用模拟适配器。'
+                text = 'The offline API loop only uses a mock adapter.'
                 score = $null
                 relevance_grade = 3
                 usefulness = $true
@@ -132,7 +133,7 @@ else {
         name = 'offline API loop'
         execution = @{
             adapter_id = 'mock'
-            prompt = @{ version = 'offline-stage3-v1'; text = '仅依据上下文回答。' }
+            prompt = @{ version = 'offline-stage3-v1'; text = 'Answer using only the context.' }
             generation = @{
                 model = 'mock-ragops-v1'
                 temperature = 0.0
@@ -168,6 +169,16 @@ Assert-Condition ($report.execution_summary.success_rate -eq 1.0) 'Execution suc
 Assert-Condition ($report.quality_summary.status -eq 'not_evaluated') 'Report quality must remain not evaluated'
 Assert-Condition ($null -eq $report.quality_summary.score) 'Report quality score must remain null'
 Assert-Condition ($export.samples.Count -eq 1) 'Export must include the complete sample result'
+$persistedDataset = Invoke-Json -Method Get -Uri "$BaseUrl/api/v1/datasets/$($state.dataset_id)"
+Assert-Condition ($persistedDataset.content_sha256 -eq $state.content_sha256) 'Dataset hash changed'
+if (-not [string]::IsNullOrWhiteSpace($ExistingStatePath)) {
+    Assert-Condition ($samples.items[0].run.run_id -eq $state.run_id) 'Run identity changed after restart'
+    Assert-Condition ($samples.items[0].run.answer -eq $state.answer) 'Run answer changed after restart'
+}
+else {
+    $state.run_id = $samples.items[0].run.run_id
+    $state.answer = $samples.items[0].run.answer
+}
 
 if (-not [string]::IsNullOrWhiteSpace($StatePath)) {
     $resolvedState = $ExecutionContext.SessionState.Path.GetUnresolvedProviderPathFromPSPath($StatePath)

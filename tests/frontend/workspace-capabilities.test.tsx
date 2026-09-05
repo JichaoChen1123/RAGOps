@@ -1,8 +1,9 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../frontend/src/App';
+import { apiClient } from '../../frontend/src/api/client';
 
 function renderOverview() {
   return render(
@@ -13,6 +14,21 @@ function renderOverview() {
 }
 
 describe('workspace navigation and RAGOps capabilities', () => {
+  it('keeps recent tasks visible when there are no evaluated quality metrics', async () => {
+    const overview = await apiClient.getProjectOverview('demo');
+    const spy = vi.spyOn(apiClient, 'getProjectOverview').mockResolvedValue({
+      ...overview, metrics: [], trend: [],
+    });
+    try {
+      renderOverview();
+      await screen.findByText('暂无已评质量指标');
+      expect(screen.getByText('最近评测任务')).toBeInTheDocument();
+      expect(screen.getByRole('link', { name: `查看 ${overview.recentTasks[0].name} 报告` })).toBeInTheDocument();
+    } finally {
+      spy.mockRestore();
+    }
+  });
+
   it('distinguishes active, available, coming-soon and disabled navigation entries', async () => {
     const user = userEvent.setup();
     renderOverview();

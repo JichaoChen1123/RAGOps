@@ -358,7 +358,6 @@ def execute_job(
             runner = ModelEvaluationExecutor(
                 adapter,
                 snapshot,
-                legacy_metric_compat=legacy_metric_compat,
             )
     except ModelError as exc:
         setup_error = exc
@@ -512,7 +511,9 @@ def _record_safe_failure(
     error: dict[str, object] | None = None,
 ) -> None:
     result.status = "failed"
-    result.answer = None
+    # Generation is committed before evaluation. A later metric error must not erase it.
+    if result.answer is not None:
+        attempts = (result.run_snapshot or {}).get("attempts", attempts)
     result.failure_code = code
     result.failure_message = message
     result.quality_status = "not_evaluated"
@@ -520,7 +521,7 @@ def _record_safe_failure(
     result.run_snapshot = {
         **(result.run_snapshot or {}),
         "status": "failed",
-        "answer": None,
+        "answer": result.answer,
         "attempt_count": len(attempts),
         "attempts": attempts,
         "error": error
@@ -722,6 +723,28 @@ def _sample_to_response(row: EvaluationJobSample) -> EvaluationSampleResponse:
         "gold_evidence_ids": row.sample.gold_evidence_ids,
         "expected_diagnoses": row.sample.expected_diagnoses,
     }
+    run = row.run_snapshot
+    if run is None and row.quality_status == "legacy_unknown":
+        # Read-only compatibility view; never invent or persist a historical run identity.
+        run = {
+            "run_id": None,
+            "status": row.status,
+            "adapter_id": None,
+            "provider_id": None,
+            "requested_model": None,
+            "actual_model": None,
+            "is_mock": None,
+            "answer": row.answer,
+            "contexts": row.retrieval_results,
+            "citations": [],
+            "latency_ms": row.latency_ms,
+            "usage": None,
+            "cost": None,
+            "provider_request_id": None,
+            "attempt_count": None,
+            "attempts": [],
+            "error": None,
+        }
     return EvaluationSampleResponse(
         id=row.id,
         sample_id=row.sample.external_id,
@@ -729,7 +752,7 @@ def _sample_to_response(row: EvaluationJobSample) -> EvaluationSampleResponse:
         labels=labels,
         reference_answer=row.sample.reference_answer,
         historical_answer=row.sample.historical_answer,
-        run=row.run_snapshot,
+        run=run,
         quality_status=row.quality_status,
         status=row.status,
         answer=row.answer,

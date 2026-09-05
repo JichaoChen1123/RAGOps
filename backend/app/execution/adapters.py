@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import json
 import time
 from collections.abc import Callable
@@ -52,13 +53,18 @@ class HttpxModelTransport:
     """Small production transport. Construction and health/status calls never perform I/O."""
 
     def send(self, request: ModelTransportRequest) -> ModelTransportResponse:
+        return asyncio.run(self._send_with_deadline(request))
+
+    async def _send_with_deadline(self, request: ModelTransportRequest) -> ModelTransportResponse:
+        async def post() -> httpx.Response:
+            async with httpx.AsyncClient(timeout=request.timeout_ms / 1000) as client:
+                return await client.post(
+                    request.url, headers=request.headers, json=request.json_body
+                )
+
         try:
-            response = httpx.post(
-                request.url,
-                headers=request.headers,
-                json=request.json_body,
-                timeout=request.timeout_ms / 1000,
-            )
+            # Phase timeouts alone permit slow streaming; cancel the whole attempt.
+            response = await asyncio.wait_for(post(), timeout=request.timeout_ms / 1000)
         except httpx.TimeoutException as exc:
             raise TimeoutError from exc
         except httpx.TransportError as exc:
@@ -294,7 +300,7 @@ class OpenAICompatibleAdapter:
                 raise TypeError
             choice = body["choices"][0]
             answer = choice["message"]["content"]
-        except (json.JSONDecodeError, KeyError, IndexError, TypeError):
+        except (ValueError, KeyError, IndexError, TypeError):
             raise _error(ModelErrorCode.response_invalid, provider_request_id=request_id) from None
         if not isinstance(answer, str) or not answer.strip():
             raise _error(ModelErrorCode.response_invalid, provider_request_id=request_id)
@@ -404,12 +410,12 @@ def _retry_after_ms(headers: dict[str, str]) -> int | None:
         return None
     try:
         return min(max(round(float(value) * 1000), 0), 5_000)
-    except ValueError:
+    except (ValueError, OverflowError):
         return None
 
 
 def _finish_reason(value: object) -> str | None:
-    if value is None:
+    if not isinstance(value, str):
         return None
     if value in {"stop", "length", "content_filter"}:
         return str(value)

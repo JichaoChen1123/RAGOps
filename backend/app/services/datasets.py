@@ -205,7 +205,20 @@ def import_samples(
             "DUPLICATE_SAMPLE_ID",
             "sample_id must be unique within a dataset version.",
             status_code=status.HTTP_409_CONFLICT,
-            details={"sample_ids": sorted(existing_ids)},
+            details={
+                "sample_ids": sorted(existing_ids),
+                "errors": [
+                    {
+                        "row": index + 1,
+                        "sample_id": sample.sample_id,
+                        "field": f"samples.{index}.sample_id",
+                        "code": "DUPLICATE_SAMPLE_ID",
+                        "message": "sample_id already exists in this dataset version.",
+                    }
+                    for index, sample in enumerate(payload.samples)
+                    if sample.sample_id in existing_ids
+                ],
+            },
         )
 
     accepted = _add_samples(session, dataset, payload.samples)

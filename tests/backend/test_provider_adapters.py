@@ -1,12 +1,14 @@
 from __future__ import annotations
 
+import asyncio
 import json
 
 import pytest
+import httpx
 
 from app.core.config import Settings
-from app.execution.adapters import OpenAICompatibleAdapter, OpenAICompatibleConfig
-from app.execution.executor import ModelEvaluationExecutor
+from app.execution.adapters import HttpxModelTransport, OpenAICompatibleAdapter, OpenAICompatibleConfig
+from app.execution.executor import ModelEvaluationExecutor, _parse_citations
 from app.execution.model import (
     GenerationConfig,
     ModelContext,
@@ -251,6 +253,7 @@ def test_rate_limit_and_server_error_retry_with_a_hard_attempt_cap() -> None:
         ([ConnectionError(), ConnectionError(), ConnectionError()], ModelErrorCode.transport_error),
         ([ModelTransportResponse(status_code=200, headers={}, body=b"")], ModelErrorCode.response_invalid),
         ([ModelTransportResponse(status_code=200, headers={}, body=b"not json")], ModelErrorCode.response_invalid),
+        ([ModelTransportResponse(status_code=200, headers={}, body=b"\xff")], ModelErrorCode.response_invalid),
         ([_response(200, {"choices": []})], ModelErrorCode.response_invalid),
         ([_response(200, {"choices": [{"message": {"content": ""}}]})], ModelErrorCode.response_invalid),
     ],
@@ -282,3 +285,57 @@ def test_disabled_real_network_rejects_before_transport() -> None:
     assert caught.value.code == ModelErrorCode.external_calls_disabled
     assert caught.value.attempts == 0
     assert transport.requests == []
+
+
+def test_position_citation_resolves_without_claiming_semantic_support() -> None:
+    citations = _parse_citations("A supported-looking answer [1] [99]", [
+        {"rank": 1, "chunk_id": "private-chunk-id", "text": "Synthetic context"},
+    ])
+    assert citations[0]["target_id"] == "private-chunk-id"
+    assert citations[0]["resolved"] is True
+    assert citations[0]["supports_claim"] is None
+    assert citations[1]["resolved"] is False
+
+
+def test_malformed_optional_finish_reason_does_not_crash_execution() -> None:
+    adapter = _adapter(MemoryTransport([
+        _response(200, {"choices": [{"message": {"content": "answer"}, "finish_reason": []}]}),
+    ]))
+    assert adapter.generate(_request()).finish_reason is None
+
+
+def test_nonfinite_retry_after_uses_bounded_retry_policy() -> None:
+    adapter = _adapter(MemoryTransport([
+        _response(429, {}, **{"retry-after": "Infinity"}),
+        _response(200, {"choices": [{"message": {"content": "answer"}}]}),
+    ]))
+    assert adapter.generate(_request()).answer == "answer"
+    assert len(adapter.last_attempts) == 2
+    assert adapter.last_attempts[0].retry_delay_ms == 0
+
+
+def test_production_transport_cancels_whole_attempt_offline(monkeypatch) -> None:
+    cancelled = []
+
+    class SlowClient:
+        def __init__(self, **kwargs):
+            pass
+
+        async def __aenter__(self):
+            return self
+
+        async def __aexit__(self, *args):
+            pass
+
+        async def post(self, *args, **kwargs):
+            try:
+                await asyncio.sleep(60)
+            finally:
+                cancelled.append(True)
+
+    monkeypatch.setattr(httpx, "AsyncClient", SlowClient)
+    with pytest.raises(TimeoutError):
+        HttpxModelTransport().send(ModelTransportRequest(
+            url="https://provider.invalid", headers={}, json_body={}, timeout_ms=20,
+        ))
+    assert cancelled == [True]

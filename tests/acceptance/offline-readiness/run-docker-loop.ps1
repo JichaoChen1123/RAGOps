@@ -21,7 +21,7 @@ function Invoke-Compose {
     param([string[]]$Arguments)
     & docker compose --project-name $projectName --project-directory $RepoRoot @Arguments
     if ($LASTEXITCODE -ne 0) {
-        throw "docker compose failed with exit code $LASTEXITCODE: $($Arguments -join ' ')"
+        throw "docker compose failed with exit code ${LASTEXITCODE}: $($Arguments -join ' ')"
     }
 }
 
@@ -41,7 +41,11 @@ function Wait-Ready {
     throw 'Docker backend did not become ready within 60 seconds'
 }
 
+$previousAdapter = $env:RAGOPS_MODEL_EXECUTION_ADAPTER
+$previousExternalCalls = $env:RAGOPS_MODEL_EXTERNAL_CALLS_ENABLED
 try {
+    $env:RAGOPS_MODEL_EXECUTION_ADAPTER = 'mock'
+    $env:RAGOPS_MODEL_EXTERNAL_CALLS_ENABLED = 'false'
     Invoke-Compose -Arguments @('config', '--quiet')
     Invoke-Compose -Arguments @('up', '--detach', '--build')
     Wait-Ready
@@ -63,4 +67,6 @@ try {
 }
 finally {
     & docker compose --project-name $projectName --project-directory $RepoRoot down --volumes
+    $env:RAGOPS_MODEL_EXECUTION_ADAPTER = $previousAdapter
+    $env:RAGOPS_MODEL_EXTERNAL_CALLS_ENABLED = $previousExternalCalls
 }

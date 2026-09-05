@@ -158,7 +158,7 @@ export function OverviewPage() {
       <PartialDataBanner message={state.partialMessage} />
       {data.warnings?.map((warning) => <PartialDataBanner key={warning} message={warning} />)}
       {data.metrics.length === 0 ? (
-        <EmptyState title="尚无评测数据" description="创建首个数据集并运行评测后，这里将展示项目质量基线。" action={<Link className="button button-primary" to={`/projects/${projectId}/datasets`}>前往数据集</Link>} />
+        <EmptyState title="暂无已评质量指标" description="任务执行记录与质量评估分别展示。" action={<Link className="button button-primary" to={`/projects/${projectId}/datasets`}>前往数据集</Link>} />
       ) : (
         <>
           <div className="metric-grid">{data.metrics.map((metric) => <MetricCard key={metric.key} metric={metric} />)}</div>
@@ -172,6 +172,8 @@ export function OverviewPage() {
               <FailureChart buckets={data.failureDistribution} />
             </Panel>
           </div>
+        </>
+      )}
           <Panel title="最近评测任务" eyebrow="任务与版本" action={<Link className="text-button" to={`/projects/${projectId}/evaluations`}>全部任务 <ArrowRight size={14} /></Link>}>
             <div className="table-wrap">
               <table>
@@ -192,8 +194,6 @@ export function OverviewPage() {
               </table>
             </div>
           </Panel>
-        </>
-      )}
       <Dialog open={trendOpen} title="质量与延迟趋势" eyebrow="LAST 7 EVALUATIONS" onClose={() => setTrendOpen(false)}>
         {data.trend.length > 0 ? <><TrendChart points={data.trend} /><div className="chart-legend"><span><i className="legend-blue" />已评质量分</span></div><div className="table-wrap compact-table"><table><thead><tr><th>评测日期</th><th>质量分</th><th>端到端延迟</th></tr></thead><tbody>{data.trend.map((point) => <tr key={point.label}><td>{point.label}</td><td className="score-cell">{point.score}</td><td>{point.latencyMs}ms</td></tr>)}</tbody></table></div></> : <EmptyState title="质量趋势未评估" description="当前记录只有执行结果，未生成语义质量分。" />}
         <p className="form-hint">只展示报告明确返回的质量分；不使用执行成功率推算质量，也不按阈值在浏览器补造门禁结论。</p>

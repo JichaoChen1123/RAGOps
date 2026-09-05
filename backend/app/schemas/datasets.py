@@ -3,7 +3,18 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import (
+    BaseModel, ConfigDict, Field, ValidationError, ValidationInfo,
+    field_validator, model_validator,
+)
+from pydantic_core import PydanticCustomError
+
+
+def _field_error(model: BaseModel, field: str, message: str) -> None:
+    raise ValidationError.from_exception_data(
+        type(model).__name__,
+        [{"type": PydanticCustomError("field_conflict", message), "loc": (field,)}],
+    )
 
 
 class RetrievedContextInput(BaseModel):
@@ -28,7 +39,9 @@ class ContextInput(BaseModel):
     origin: Literal["provided", "retrieved", "legacy_unknown"]
     rank: int = Field(ge=1)
     rank_before: int | None = Field(default=None, ge=1)
-    retrieval_run_id: str | None = Field(default=None, min_length=1, max_length=300)
+    retrieval_run_id: str | None = Field(
+        default=None, min_length=1, max_length=300, validate_default=True
+    )
     doc_id: str = Field(min_length=1, max_length=300)
     chunk_id: str = Field(min_length=1, max_length=300)
     evidence_ids: list[str] = Field(default_factory=list)
@@ -45,13 +58,20 @@ class ContextInput(BaseModel):
             raise ValueError("value must not be blank")
         return value
 
-    @model_validator(mode="after")
-    def retrieval_provenance_matches_origin(self) -> ContextInput:
-        if self.origin == "retrieved" and not self.retrieval_run_id:
+    @field_validator("retrieval_run_id")
+    @classmethod
+    def retrieval_provenance_matches_origin(
+        cls, value: str | None, info: ValidationInfo
+    ) -> str | None:
+        if value is not None:
+            value = value.strip()
+            if not value:
+                raise ValueError("retrieval_run_id must not be blank")
+        if info.data.get("origin") == "retrieved" and not value:
             raise ValueError("retrieved context requires retrieval_run_id")
-        if self.origin != "retrieved" and self.retrieval_run_id is not None:
+        if info.data.get("origin") != "retrieved" and value is not None:
             raise ValueError("only retrieved context may include retrieval_run_id")
-        return self
+        return value
 
 
 class CitationInput(BaseModel):
@@ -152,15 +172,10 @@ class DatasetSampleInput(BaseModel):
     tags: list[str] = Field(default_factory=list)
     metadata: dict[str, Any] = Field(default_factory=dict)
 
-    @model_validator(mode="before")
+    @field_validator("schema_version", mode="before")
     @classmethod
     def validate_raw_version(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return value
-        if "schema_version" not in value:
-            return {**value, "schema_version": "1.0"}
-        raw = value.get("schema_version")
-        if raw is None or not isinstance(raw, str) or not raw.strip():
+        if not isinstance(value, str) or not value.strip():
             raise ValueError("schema_version must be a supported non-blank value")
         return value
 
@@ -185,17 +200,19 @@ class DatasetSampleInput(BaseModel):
         }
         new_fields = {"labels", "contexts", "historical_output"}
         if self.schema_version == "2.0" and old_fields.intersection(self.model_fields_set):
-            raise ValueError("AMBIGUOUS_SCHEMA_FIELDS")
+            field = sorted(old_fields.intersection(self.model_fields_set))[0]
+            _field_error(self, field, "AMBIGUOUS_SCHEMA_FIELDS")
         if self.schema_version == "1.0" and new_fields.intersection(self.model_fields_set):
-            raise ValueError("AMBIGUOUS_SCHEMA_FIELDS")
+            field = sorted(new_fields.intersection(self.model_fields_set))[0]
+            _field_error(self, field, "AMBIGUOUS_SCHEMA_FIELDS")
 
         ranks = [context.rank for context in self.normalized_contexts]
         if len(ranks) != len(set(ranks)):
             if self.schema_version == "1.0":
-                raise ValueError("retrieved context ranks must be unique")
-            raise ValueError("context ranks must be unique")
+                _field_error(self, "retrieved_contexts", "retrieved context ranks must be unique")
+            _field_error(self, "contexts", "context ranks must be unique")
         if self.schema_version == "2.0" and sorted(ranks) != list(range(1, len(ranks) + 1)):
-            raise ValueError("context ranks must start at 1 and be contiguous")
+            _field_error(self, "contexts", "context ranks must start at 1 and be contiguous")
         if self.schema_version == "2.0" and any(
             context.origin != "retrieved" and context.rank_before is not None
             for context in self.normalized_contexts
@@ -279,15 +296,10 @@ class DatasetCreate(BaseModel):
     schema_version: Literal["1.0", "2.0"] = "1.0"
     samples: list[DatasetSampleInput] = Field(default_factory=list, max_length=1000)
 
-    @model_validator(mode="before")
+    @field_validator("schema_version", mode="before")
     @classmethod
     def validate_raw_version(cls, value: object) -> object:
-        if not isinstance(value, dict):
-            return value
-        if "schema_version" not in value:
-            return {**value, "schema_version": "1.0"}
-        raw = value.get("schema_version")
-        if raw is None or not isinstance(raw, str) or not raw.strip():
+        if not isinstance(value, str) or not value.strip():
             raise ValueError("schema_version must be a supported non-blank value")
         return value
 

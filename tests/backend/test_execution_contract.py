@@ -11,6 +11,7 @@ from app.execution.adapters import (
     OpenAICompatibleConfig,
 )
 from app.execution.model import ModelResponse, ModelTransportRequest, ModelTransportResponse
+from app.execution.executor import ModelEvaluationExecutor
 from app.main import create_app
 from app.schemas.jobs import EvaluationJobCreate
 from app.services import jobs as job_service
@@ -379,3 +380,26 @@ def test_two_runs_keep_independent_answers_and_survive_database_reopen(tmp_path)
     assert source_sample["historical_output"]["answer"] not in {
         item["answer"] for item in persisted
     }
+
+
+def test_evaluator_failure_preserves_committed_model_output(client, sample_payload, monkeypatch):
+    dataset_id = create_published_dataset(client, [sample_payload])
+
+    def broken_evaluator(*args):
+        raise RuntimeError("PRIVATE-EVALUATOR-ERROR")
+
+    monkeypatch.setattr(ModelEvaluationExecutor, "evaluate_generated", broken_evaluator)
+    created = client.post("/api/v1/evaluation-jobs", json=_v2_job(dataset_id))
+    assert created.status_code == 202
+    job_id = created.json()["id"]
+    sample = client.get(f"/api/v1/evaluation-jobs/{job_id}/samples").json()["items"][0]
+    report = client.get(f"/api/v1/evaluation-jobs/{job_id}/report").json()
+    assert sample["status"] == "failed"
+    assert sample["answer"].startswith("[mock]")
+    assert sample["run"]["answer"] == sample["answer"]
+    assert sample["run"]["attempt_count"] == 1
+    assert sample["run"]["attempts"][0]["status"] == "succeeded"
+    assert sample["run"]["error"]["code"] == "EXECUTOR_ERROR"
+    assert sample["quality_status"] == "not_evaluated"
+    assert report["quality_summary"]["score"] is None
+    assert "PRIVATE-EVALUATOR-ERROR" not in json.dumps(sample)

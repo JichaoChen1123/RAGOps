@@ -84,6 +84,7 @@ def install_error_handlers(app: FastAPI) -> None:
             item_code = "VALIDATION_ERROR"
             if location and location[-1] == "schema_version" and error["type"] == "literal_error":
                 item_code = "UNSUPPORTED_SCHEMA_VERSION"
+                response_code = item_code
             elif "AMBIGUOUS_EXECUTION_CONFIG" in message:
                 response_code = "AMBIGUOUS_EXECUTION_CONFIG"
                 item_code = "AMBIGUOUS_EXECUTION_CONFIG"

@@ -75,7 +75,11 @@ def _create_dataset(client, name: str) -> str:
 def _assert_validation_oracle(response, expected_error: str) -> None:
     assert response.status_code == 422
     payload = response.json()["error"]
-    assert payload["code"] == "VALIDATION_ERROR"
+    assert payload["code"] == (
+        "UNSUPPORTED_SCHEMA_VERSION"
+        if expected_error == "SCHEMA_VERSION_UNSUPPORTED"
+        else "VALIDATION_ERROR"
+    )
     assert payload["request_id"].startswith("req_")
 
     expected = VALIDATION_ORACLE[expected_error]
@@ -162,24 +166,19 @@ def test_sanitized_fixtures_complete_the_real_api_evaluation_loop(client) -> Non
     assert set(by_sample_id) == {sample["sample_id"] for sample in VALID_SAMPLES}
     assert all(item["status"] == "succeeded" for item in by_sample_id.values())
 
-    perfect = by_sample_id["rag-perfect-001"]
-    retrieval_miss = by_sample_id["rag-retrieval-miss-001"]
-    assert _metric(perfect["metric_results"], "recall_at_3")["value"] == 1.0
-    assert _metric(retrieval_miss["metric_results"], "recall_at_3")["value"] == 0.0
-
     fixture_labels = {
         label for sample in VALID_SAMPLES for label in sample.get("expected_diagnoses", [])
     }
     assert fixture_labels - set(SUPPORTED_DIAGNOSIS_ORACLE) == KNOWN_UNSUPPORTED_DIAGNOSES
     for fixture in VALID_SAMPLES:
-        positive_rule_ids = {
-            diagnosis["rule_id"]
-            for diagnosis in by_sample_id[fixture["sample_id"]]["diagnoses"]
-            if diagnosis["status"] in {"confirmed", "suspected"}
-        }
-        for expected_label in fixture.get("expected_diagnoses", []):
-            if expected_label in SUPPORTED_DIAGNOSIS_ORACLE:
-                assert SUPPORTED_DIAGNOSIS_ORACLE[expected_label] in positive_rule_ids
+        current = by_sample_id[fixture["sample_id"]]
+        # Version 1 fixtures have unknown retrieval provenance, even through the
+        # legacy job-creation API. Historical labels are not this run's output.
+        assert _metric(current["metric_results"], "recall_at_3")["value"] is None
+        assert current["answer"].startswith("[mock]")
+        assert current["run"]["answer"] == current["answer"]
+        assert current["reference_answer"] == fixture.get("reference_answer")
+        assert current["quality_status"] != "evaluated"
 
     assert report.status_code == 200
     assert report.json()["status"] == "completed"
@@ -192,9 +191,9 @@ def test_sanitized_fixtures_complete_the_real_api_evaluation_loop(client) -> Non
     execution_rate = _metric(report.json()["metrics"], "execution_success_rate")
     recall_at_3 = _metric(report.json()["metrics"], "recall_at_3")
     assert execution_rate["value"] == 1.0
-    assert recall_at_3["value"] == pytest.approx(0.6)
-    assert recall_at_3["evaluated_count"] == 5
-    assert recall_at_3["excluded_count"] == 1
+    assert recall_at_3["value"] is None
+    assert recall_at_3["evaluated_count"] == 0
+    assert recall_at_3["excluded_count"] == 6
 
 
 @pytest.mark.parametrize(
