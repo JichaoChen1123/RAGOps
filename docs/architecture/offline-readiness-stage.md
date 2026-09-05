@@ -1,6 +1,6 @@
 # RAGOps 离线接入基础建设阶段
 
-状态：阶段目标已定义；公共接口待负责人冻结，业务实现与离线验收尚未完成。
+状态：公共接口已在 [`model-execution-contract.md`](model-execution-contract.md) 冻结；业务实现与离线验收尚未完成。
 
 Multica 总任务：`WOR-61`。阶段集成分支：`work/wor-61-offline-readiness`，最终 PR 目标为 `main`，本阶段交付可审核 PR，不自动合并 main。
 
@@ -50,7 +50,7 @@ Multica 总任务：`WOR-61`。阶段集成分支：`work/wor-61-offline-readine
 
 ## 负责人必须冻结的公共契约
 
-在 `docs/architecture/model-execution-contract.md` 定义下列契约，并附最小请求、响应、错误和报告 JSON 示例。保持现有架构，确有必要才新增抽象。
+[`model-execution-contract.md`](model-execution-contract.md) 已冻结下列契约，并附最小请求、响应、错误和报告 JSON 示例。阶段 2 实现必须遵守该文档；保持现有架构，确有必要才新增抽象。
 
 1. 提供方无关请求：问题、仅模型可见的上下文、Prompt、生成参数；不得含参考答案、gold 标签、预存回答或整份样本 metadata。
 2. 提供方无关响应：本次回答、实际模型、结束原因、耗时、可选 Token 用量、可选提供方请求 ID、模拟标识；未知字段为 null，不能编造消耗或成本。
