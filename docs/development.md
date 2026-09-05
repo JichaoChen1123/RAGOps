@@ -49,9 +49,9 @@ docker compose up --build
 
 ### 当前接口边界
 
-前端真实 client 当前请求 `/api/v1/projects/{project_id}/...`，后端 MVP 当前提供 `/api/v1/datasets` 与 `/api/v1/evaluation-jobs` 等资源路由。两者是 Stage 3 已验收的独立契约，本次集成不擅自改写。
+前端 client 已对齐后端的 `/api/v1/datasets`、`/evaluation-jobs`、报告、样本/复核与 `/model-execution/status` 资源路由。前端页面 URL 中的 `projectId` 只表示工作台上下文，不会被拼进资源 API。Vite 开发服务器通过 `VITE_API_PROXY_TARGET` 代理 `/api`，Compose/Nginx 通过同源 `/api/` 代理到 backend。
 
-因此 Compose 默认 `VITE_API_MODE=mock`，前端演示链路可用；真实后端可通过 Swagger UI 独立验证。将模式改为 `api` 前，需要先完成项目级聚合路由或前端适配，并新增契约测试。
+Compose 仍默认 `VITE_API_MODE=mock`，避免克隆后把演示数据误当成本地持久化结果。设置 `VITE_API_MODE=api` 后，页面会读取并写入真实 RAGOps 后端；这不表示外部模型已配置、已连接或已验证。
 
 ## 不使用 Docker 的本地开发
 
@@ -70,6 +70,37 @@ npm --prefix frontend ci
 npm --prefix frontend run dev
 ```
 
+本地 API 模式：
+
+```powershell
+$env:RAGOPS_MODEL_EXECUTION_ADAPTER = 'mock'
+$env:RAGOPS_MODEL_EXTERNAL_CALLS_ENABLED = 'false'
+uv run --project backend ragops init-db
+uv run --project backend uvicorn app.main:app --app-dir backend --host 127.0.0.1 --port 8000
+
+$env:VITE_API_MODE = 'api'
+$env:VITE_API_BASE_URL = '/api/v1'
+$env:VITE_API_PROXY_TARGET = 'http://127.0.0.1:8000'
+npm --prefix frontend run dev
+```
+
+后端命令与前端命令应在两个终端运行。只有顶部状态同时显示“API 数据 / mock / 提供方未配置”时，才是本阶段预期的离线 API 组合。
+
+## 模型执行与秘密边界
+
+后端默认使用 `mock`，`RAGOPS_MODEL_EXTERNAL_CALLS_ENABLED=false` 是唯一外部模型网络总开关。OpenAI-compatible 适配器已通过内存 HTTP transport 离线测试，但没有完成真实连接验证；不能因为 Base URL 或 Key 存在就自动启用。
+
+秘密只能通过后端环境或 secret store 注入。不得进入 `VITE_*`、API 状态响应、运行快照、日志、异常消息、报告、截图或前端 build。完整变量、范围和错误语义见 [模型执行契约](architecture/model-execution-contract.md)。
+
+## 数据库初始化与迁移
+
+```powershell
+uv run --project backend ragops init-db
+uv run --project backend ragops init-db
+```
+
+两次命令都应成功，第二次不重复迁移。迁移链为 `0001_mvp_baseline -> 0002_model_execution_contract`；完整旧 1.0 库会先校验再升级并保留原记录，新库直接创建到 head。部分或未知 schema 必须报错，禁止删库、删卷或 `create_all` 重建来代替迁移。
+
 ## 与 CI 一致的检查
 
 ```bash
@@ -83,13 +114,23 @@ npm --prefix frontend test
 npm --prefix frontend run build
 
 uv run --project backend python scripts/validate_repository.py
+pwsh -File tests/acceptance/offline-readiness/validate-assets.ps1 -RepoRoot .
+pwsh -File tests/acceptance/offline-readiness/run-local-restart.ps1 -RepoRoot .
 docker compose config --quiet
 docker compose build
 ```
 
 `scripts/validate_repository.py` 会检查 Markdown 基础格式与本地链接、JSON/JSONL 可解析性、脱敏 fixture 的关键 oracle，以及 YAML（包括 Compose 和 GitHub Actions）语法。
 
-MVP 的测试矩阵、验收标准、未覆盖风险和本地受限环境说明见 `docs/qa/mvp-acceptance.md`。
+阶段测试矩阵、实际结果、截图和已知阻断见 [离线基础集成验收记录](qa/offline-readiness-acceptance.md)。产品浏览器脚本使用本机 Edge/Chrome，不下载浏览器；启动方式和三阶段顺序见 `tests/acceptance/offline-readiness/browser-checklist.md`。当前基线存在诊断 `rule_id` 显示为 `unclassified` 的 P1 缺陷，修复复测前不能把浏览器语义门禁写成通过。
+
+如果 Docker Engine 未运行，只记录 `docker info` 的实际错误，并继续本地回归；不要安装 Docker、登录账号或删除用户卷。Engine 可用时执行：
+
+```powershell
+$env:RAGOPS_MODEL_EXECUTION_ADAPTER = 'mock'
+$env:RAGOPS_MODEL_EXTERNAL_CALLS_ENABLED = 'false'
+pwsh -File tests/acceptance/offline-readiness/run-docker-loop.ps1 -RepoRoot .
+```
 
 ## Windows Git hook 的 `sh.exe` 风险
 

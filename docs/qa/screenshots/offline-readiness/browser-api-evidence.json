@@ -1,0 +1,50 @@
+{
+  "baseline_sha": "10ef6b33c4373ee98f6e82e9a053212e5105252f",
+  "phase": "disconnected",
+  "frontend_url": "http://127.0.0.1:15173",
+  "dataset_name": "退款政策示例 JSONL",
+  "task_id": "01a070fb-98f6-72df-906a-63ee29a3a19d",
+  "sample_id": "01a070fb-98fa-7e0c-a24b-0b182707bbd6",
+  "report_url": "http://127.0.0.1:15173/projects/demo/evaluations/01a070fb-98f6-72df-906a-63ee29a3a19d/report",
+  "diagnosis_url": "http://127.0.0.1:15173/projects/demo/evaluations/01a070fb-98f6-72df-906a-63ee29a3a19d/samples/01a070fb-98fa-7e0c-a24b-0b182707bbd6",
+  "generated_answer": "[mock] 退款成功后，成长值按退款商品实付金额比例扣回。",
+  "runtime_axes": "前端API 数据执行器mock提供方未配置",
+  "report_status": "任务生命周期已完成执行结果执行成功质量状态未评估质量分未知",
+  "mobile_layout": {
+    "clientWidth": 390,
+    "scrollWidth": 390,
+    "bodyTextLength": 1415
+  },
+  "diagnosis_labels": [
+    "unclassified",
+    "unclassified",
+    "unclassified"
+  ],
+  "semantic_failures": [
+    "Backend diagnosis rule_id values are rendered as unclassified."
+  ],
+  "browser": "local Chromium channel via playwright-core",
+  "browser_executable": "msedge.exe",
+  "request_count": 41,
+  "request_hosts": [
+    "127.0.0.1:15173"
+  ],
+  "external_requests": [],
+  "console_errors": [
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+    "Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+  ],
+  "acceptance_failures": [
+    "Backend diagnosis rule_id values are rendered as unclassified."
+  ],
+  "acceptance_status": "failed",
+  "restart_recheck": "passed",
+  "disconnected_state": "passed_without_mock_fallback",
+  "console_errors_context": "expected local API 502 responses after the backend was deliberately stopped"
+}

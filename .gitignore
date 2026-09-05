@@ -6,9 +6,14 @@ ragops.db
 
 __pycache__/
 .pytest_cache/
+.pytest-basetemp/
+pytest-cache-files-*/
 .ruff_cache/
 .venv/
+.uv-cache/
+.coverage
 
 node_modules/
+.npm-cache/
 dist/
 coverage/

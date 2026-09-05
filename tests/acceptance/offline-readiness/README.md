@@ -33,8 +33,10 @@ Docker 隔离闭环：
 pwsh -File tests/acceptance/offline-readiness/run-docker-loop.ps1 -RepoRoot .
 ```
 
-真实浏览器检查见 [浏览器检查表](browser-checklist.md)。浏览器脚本和截图只能补充 API 闭环；不得用截图代替 `invoke-api-loop.ps1` 的创建、导入、发布、运行、报告和导出断言。
+真实浏览器检查见 [浏览器检查表](browser-checklist.md)。仓库提供 `frontend/scripts/offline-readiness-browser.mjs`，通过 `npm --prefix frontend run acceptance:offline-browser -- <phase>` 驱动本机 Edge/Chrome；不下载浏览器。浏览器脚本和截图只能补充 API 闭环；不得用截图代替 `invoke-api-loop.ps1` 的创建、导入、发布、运行、报告和导出断言。
 
 ## 证据要求
 
 每次执行记录提交 SHA、命令、退出码、通过/失败数、SQLite 状态文件和未验证项。真实提供方连接与真实问答质量在本阶段必须记录为“未执行，按范围禁止”。
+
+WOR-66 的实际命令、截图、Docker 环境限制和当前前端阻断见 [`docs/qa/offline-readiness-acceptance.md`](../../../docs/qa/offline-readiness-acceptance.md)。验收脚本发现语义错误时应保留非零退出码和证据，不能只因页面可打开而改写为通过。
