@@ -19,7 +19,7 @@
 - LLM judge 或线上业务评测。
 - 生产部署、高可用、权限系统、真实向量检索与生产队列。
 
-> 当前集成基线的浏览器 API 验收发现诊断 `rule_id` 被显示为 `unclassified`。核心闭环可运行，但修复并复测前不能宣称离线阶段全部通过；见 [离线基础集成验收记录](qa/offline-readiness-acceptance.md)。
+> D01 诊断 `rule_id`/React key 修复已在集成基线 `1698150bf8a63dfd534b4c10a2fc64287cbcf993` 完成独立浏览器复测；本地 API/SQLite 重启与 create/restart/disconnected 均通过。Docker 容器和真实模型连接仍未验证；见 [离线基础集成验收记录](qa/offline-readiness-acceptance.md)。
 
 ## 2. 前置环境
 

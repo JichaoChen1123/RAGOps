@@ -122,7 +122,7 @@ docker compose build
 
 `scripts/validate_repository.py` 会检查 Markdown 基础格式与本地链接、JSON/JSONL 可解析性、脱敏 fixture 的关键 oracle，以及 YAML（包括 Compose 和 GitHub Actions）语法。
 
-阶段测试矩阵、实际结果、截图和已知阻断见 [离线基础集成验收记录](qa/offline-readiness-acceptance.md)。产品浏览器脚本使用本机 Edge/Chrome，不下载浏览器；启动方式和三阶段顺序见 `tests/acceptance/offline-readiness/browser-checklist.md`。当前基线存在诊断 `rule_id` 显示为 `unclassified` 的 P1 缺陷，修复复测前不能把浏览器语义门禁写成通过。
+阶段测试矩阵、实际结果、截图和未验证项见 [离线基础集成验收记录](qa/offline-readiness-acceptance.md)。产品浏览器脚本使用本机 Edge/Chrome，不下载浏览器；启动方式和三阶段顺序见 `tests/acceptance/offline-readiness/browser-checklist.md`。D01 诊断 `rule_id`/React key 修复已在 `1698150bf8a63dfd534b4c10a2fc64287cbcf993` 完成独立复测，三个浏览器阶段分别保留当前 DOM/API 与退出码；Docker 容器和真实模型连接仍未验证。
 
 如果 Docker Engine 未运行，只记录 `docker info` 的实际错误，并继续本地回归；不要安装 Docker、登录账号或删除用户卷。Engine 可用时执行：
 

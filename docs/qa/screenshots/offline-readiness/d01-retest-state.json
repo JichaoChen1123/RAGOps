@@ -1,0 +1,363 @@
+{
+  "baseline_sha": "1698150bf8a63dfd534b4c10a2fc64287cbcf993",
+  "script_version": "wor-68-d01-retest-v1",
+  "phase": "disconnected",
+  "frontend_url": "http://127.0.0.1:15173",
+  "dataset_name": "退款政策示例 JSONL",
+  "task_id": "01a07137-fae5-7d14-984e-3c09e71e27cd",
+  "sample_id": "01a07137-fb0c-739c-892b-70ef48c0fee1",
+  "report_url": "http://127.0.0.1:15173/projects/demo/evaluations/01a07137-fae5-7d14-984e-3c09e71e27cd/report",
+  "diagnosis_url": "http://127.0.0.1:15173/projects/demo/evaluations/01a07137-fae5-7d14-984e-3c09e71e27cd/samples/01a07137-fb0c-739c-892b-70ef48c0fee1",
+  "generated_answer": "[mock] 退款成功后，成长值按退款商品实付金额比例扣回。",
+  "runtime_axes": "前端API 数据执行器mock提供方未配置",
+  "report_status": "任务生命周期已完成执行结果执行成功质量状态未评估质量分未知",
+  "desktop_layout": {
+    "viewport": {
+      "width": 1440,
+      "height": 900
+    },
+    "clientWidth": 1440,
+    "scrollWidth": 1440,
+    "bodyTextLength": 284
+  },
+  "mobile_layout": {
+    "viewport": {
+      "width": 390,
+      "height": 844
+    },
+    "clientWidth": 390,
+    "scrollWidth": 390,
+    "bodyTextLength": 1449
+  },
+  "diagnosis_dom": {
+    "reference_answer": "按退款金额比例扣回。",
+    "historical_answer_visible": false,
+    "generated_answer": "[mock] 退款成功后，成长值按退款商品实付金额比例扣回。",
+    "context_text": "#1doc-refund-policy-01给定上下文 · doc-refund-policy-01退款成功后，成长值按退款商品实付金额比例扣回。未知来源分数参考标签",
+    "citation_text": "没有引用记录",
+    "usage_text": "Token 用量未知",
+    "diagnosis_labels": [
+      "retrieval.missing_evidence",
+      "citation.missing",
+      "rerank.no_gain_or_regression"
+    ]
+  },
+  "failure_distribution_dom": [
+    {
+      "label": "retrieval.missing_evidence",
+      "count": 12
+    }
+  ],
+  "api_snapshot": {
+    "task": {
+      "id": "01a07137-fae5-7d14-984e-3c09e71e27cd",
+      "status": "completed",
+      "outcome": "succeeded",
+      "quality_status": "not_evaluated",
+      "quality_score": null,
+      "adapter_id": "mock",
+      "is_mock": true
+    },
+    "report": {
+      "id": "01a07137-fc26-7d72-88f3-5eaddd375d77",
+      "status": "completed",
+      "execution_outcome": "succeeded",
+      "quality_status": "not_evaluated",
+      "quality_verdict": "unknown",
+      "quality_score": null
+    },
+    "sample": {
+      "id": "01a07137-fb0c-739c-892b-70ef48c0fee1",
+      "sample_id": "refund-example-01",
+      "reference_answer": "按退款金额比例扣回。",
+      "historical_answer": null,
+      "answer": "[mock] 退款成功后，成长值按退款商品实付金额比例扣回。",
+      "context_origins": [
+        "provided"
+      ],
+      "citation_count": 0,
+      "diagnosis_rule_ids": [
+        "retrieval.missing_evidence",
+        "citation.missing",
+        "rerank.no_gain_or_regression"
+      ]
+    },
+    "primary_rule_counts": {
+      "retrieval.missing_evidence": 12
+    }
+  },
+  "browser": "local Chromium channel via playwright-core",
+  "browser_executable": "msedge.exe",
+  "request_count": 132,
+  "request_hosts": [
+    "127.0.0.1:15173"
+  ],
+  "external_requests": [],
+  "console_errors": [],
+  "console_warnings": [],
+  "duplicate_key_warnings": [],
+  "acceptance_failures": [],
+  "acceptance_status": "passed",
+  "exit_code": 0,
+  "error": null,
+  "evidence_path": "docs/qa/screenshots/offline-readiness/d01-retest-create.json",
+  "phase_results": {
+    "create": {
+      "baseline_sha": "1698150bf8a63dfd534b4c10a2fc64287cbcf993",
+      "script_version": "wor-68-d01-retest-v1",
+      "phase": "create",
+      "frontend_url": "http://127.0.0.1:15173",
+      "dataset_name": "退款政策示例 JSONL",
+      "task_id": "01a07137-fae5-7d14-984e-3c09e71e27cd",
+      "sample_id": "01a07137-fb0c-739c-892b-70ef48c0fee1",
+      "report_url": "http://127.0.0.1:15173/projects/demo/evaluations/01a07137-fae5-7d14-984e-3c09e71e27cd/report",
+      "diagnosis_url": "http://127.0.0.1:15173/projects/demo/evaluations/01a07137-fae5-7d14-984e-3c09e71e27cd/samples/01a07137-fb0c-739c-892b-70ef48c0fee1",
+      "generated_answer": "[mock] 退款成功后，成长值按退款商品实付金额比例扣回。",
+      "runtime_axes": "前端API 数据执行器mock提供方未配置",
+      "report_status": "任务生命周期已完成执行结果执行成功质量状态未评估质量分未知",
+      "desktop_layout": {
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "clientWidth": 1440,
+        "scrollWidth": 1440,
+        "bodyTextLength": 2513
+      },
+      "mobile_layout": {
+        "viewport": {
+          "width": 390,
+          "height": 844
+        },
+        "clientWidth": 390,
+        "scrollWidth": 390,
+        "bodyTextLength": 1449
+      },
+      "diagnosis_dom": {
+        "reference_answer": "按退款金额比例扣回。",
+        "historical_answer_visible": false,
+        "generated_answer": "[mock] 退款成功后，成长值按退款商品实付金额比例扣回。",
+        "context_text": "#1doc-refund-policy-01给定上下文 · doc-refund-policy-01退款成功后，成长值按退款商品实付金额比例扣回。未知来源分数参考标签",
+        "citation_text": "没有引用记录",
+        "usage_text": "Token 用量未知",
+        "diagnosis_labels": [
+          "retrieval.missing_evidence",
+          "citation.missing",
+          "rerank.no_gain_or_regression"
+        ]
+      },
+      "failure_distribution_dom": [
+        {
+          "label": "retrieval.missing_evidence",
+          "count": 12
+        }
+      ],
+      "api_snapshot": {
+        "task": {
+          "id": "01a07137-fae5-7d14-984e-3c09e71e27cd",
+          "status": "completed",
+          "outcome": "succeeded",
+          "quality_status": "not_evaluated",
+          "quality_score": null,
+          "adapter_id": "mock",
+          "is_mock": true
+        },
+        "report": {
+          "id": "01a07137-fc26-7d72-88f3-5eaddd375d77",
+          "status": "completed",
+          "execution_outcome": "succeeded",
+          "quality_status": "not_evaluated",
+          "quality_verdict": "unknown",
+          "quality_score": null
+        },
+        "sample": {
+          "id": "01a07137-fb0c-739c-892b-70ef48c0fee1",
+          "sample_id": "refund-example-01",
+          "reference_answer": "按退款金额比例扣回。",
+          "historical_answer": null,
+          "answer": "[mock] 退款成功后，成长值按退款商品实付金额比例扣回。",
+          "context_origins": [
+            "provided"
+          ],
+          "citation_count": 0,
+          "diagnosis_rule_ids": [
+            "retrieval.missing_evidence",
+            "citation.missing",
+            "rerank.no_gain_or_regression"
+          ]
+        },
+        "primary_rule_counts": {
+          "retrieval.missing_evidence": 12
+        }
+      },
+      "browser": "local Chromium channel via playwright-core",
+      "browser_executable": "msedge.exe",
+      "request_count": 132,
+      "request_hosts": [
+        "127.0.0.1:15173"
+      ],
+      "external_requests": [],
+      "console_errors": [],
+      "console_warnings": [],
+      "duplicate_key_warnings": [],
+      "acceptance_failures": [],
+      "acceptance_status": "passed",
+      "exit_code": 0,
+      "error": null,
+      "evidence_path": "docs/qa/screenshots/offline-readiness/d01-retest-create.json"
+    },
+    "restart_recheck": {
+      "baseline_sha": "1698150bf8a63dfd534b4c10a2fc64287cbcf993",
+      "script_version": "wor-68-d01-retest-v1",
+      "phase": "restart_recheck",
+      "frontend_url": "http://127.0.0.1:15173",
+      "dataset_name": "退款政策示例 JSONL",
+      "task_id": "01a07137-fae5-7d14-984e-3c09e71e27cd",
+      "sample_id": "01a07137-fb0c-739c-892b-70ef48c0fee1",
+      "report_url": "http://127.0.0.1:15173/projects/demo/evaluations/01a07137-fae5-7d14-984e-3c09e71e27cd/report",
+      "diagnosis_url": "http://127.0.0.1:15173/projects/demo/evaluations/01a07137-fae5-7d14-984e-3c09e71e27cd/samples/01a07137-fb0c-739c-892b-70ef48c0fee1",
+      "generated_answer": "[mock] 退款成功后，成长值按退款商品实付金额比例扣回。",
+      "runtime_axes": "前端API 数据执行器mock提供方未配置",
+      "report_status": "任务生命周期已完成执行结果执行成功质量状态未评估质量分未知",
+      "desktop_layout": {
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "clientWidth": 1440,
+        "scrollWidth": 1440,
+        "bodyTextLength": 2513
+      },
+      "diagnosis_dom": {
+        "reference_answer": "按退款金额比例扣回。",
+        "historical_answer_visible": false,
+        "generated_answer": "[mock] 退款成功后，成长值按退款商品实付金额比例扣回。",
+        "context_text": "#1doc-refund-policy-01给定上下文 · doc-refund-policy-01退款成功后，成长值按退款商品实付金额比例扣回。未知来源分数参考标签",
+        "citation_text": "没有引用记录",
+        "usage_text": "Token 用量未知",
+        "diagnosis_labels": [
+          "retrieval.missing_evidence",
+          "citation.missing",
+          "rerank.no_gain_or_regression"
+        ]
+      },
+      "failure_distribution_dom": [
+        {
+          "label": "retrieval.missing_evidence",
+          "count": 12
+        }
+      ],
+      "api_snapshot": {
+        "task": {
+          "id": "01a07137-fae5-7d14-984e-3c09e71e27cd",
+          "status": "completed",
+          "outcome": "succeeded",
+          "quality_status": "not_evaluated",
+          "quality_score": null,
+          "adapter_id": "mock",
+          "is_mock": true
+        },
+        "report": {
+          "id": "01a07137-fc26-7d72-88f3-5eaddd375d77",
+          "status": "completed",
+          "execution_outcome": "succeeded",
+          "quality_status": "not_evaluated",
+          "quality_verdict": "unknown",
+          "quality_score": null
+        },
+        "sample": {
+          "id": "01a07137-fb0c-739c-892b-70ef48c0fee1",
+          "sample_id": "refund-example-01",
+          "reference_answer": "按退款金额比例扣回。",
+          "historical_answer": null,
+          "answer": "[mock] 退款成功后，成长值按退款商品实付金额比例扣回。",
+          "context_origins": [
+            "provided"
+          ],
+          "citation_count": 0,
+          "diagnosis_rule_ids": [
+            "retrieval.missing_evidence",
+            "citation.missing",
+            "rerank.no_gain_or_regression"
+          ]
+        },
+        "primary_rule_counts": {
+          "retrieval.missing_evidence": 12
+        }
+      },
+      "restart_recheck": "passed_with_fresh_dom_and_api",
+      "browser": "local Chromium channel via playwright-core",
+      "browser_executable": "msedge.exe",
+      "request_count": 81,
+      "request_hosts": [
+        "127.0.0.1:15173"
+      ],
+      "external_requests": [],
+      "console_errors": [],
+      "console_warnings": [],
+      "duplicate_key_warnings": [],
+      "acceptance_failures": [],
+      "acceptance_status": "passed",
+      "exit_code": 0,
+      "error": null,
+      "evidence_path": "docs/qa/screenshots/offline-readiness/d01-retest-restart_recheck.json"
+    },
+    "disconnected": {
+      "baseline_sha": "1698150bf8a63dfd534b4c10a2fc64287cbcf993",
+      "script_version": "wor-68-d01-retest-v1",
+      "phase": "disconnected",
+      "frontend_url": "http://127.0.0.1:15173",
+      "dataset_name": "退款政策示例 JSONL",
+      "task_id": "01a07137-fae5-7d14-984e-3c09e71e27cd",
+      "sample_id": "01a07137-fb0c-739c-892b-70ef48c0fee1",
+      "report_url": "http://127.0.0.1:15173/projects/demo/evaluations/01a07137-fae5-7d14-984e-3c09e71e27cd/report",
+      "diagnosis_url": "http://127.0.0.1:15173/projects/demo/evaluations/01a07137-fae5-7d14-984e-3c09e71e27cd/samples/01a07137-fb0c-739c-892b-70ef48c0fee1",
+      "http_error": "数据载入失败请求失败（HTTP 502） 重新请求",
+      "desktop_layout": {
+        "viewport": {
+          "width": 1440,
+          "height": 900
+        },
+        "clientWidth": 1440,
+        "scrollWidth": 1440,
+        "bodyTextLength": 284
+      },
+      "disconnected_state": "passed_without_mock_fallback",
+      "console_errors_context": "expected local API 502 responses after the backend was deliberately stopped",
+      "browser": "local Chromium channel via playwright-core",
+      "browser_executable": "msedge.exe",
+      "request_count": 41,
+      "request_hosts": [
+        "127.0.0.1:15173"
+      ],
+      "external_requests": [],
+      "console_errors": [
+        "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+        "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+        "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+        "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+        "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+        "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+        "Failed to load resource: the server responded with a status of 502 (Bad Gateway)",
+        "Failed to load resource: the server responded with a status of 502 (Bad Gateway)"
+      ],
+      "console_warnings": [],
+      "duplicate_key_warnings": [],
+      "acceptance_failures": [],
+      "acceptance_status": "passed",
+      "exit_code": 0,
+      "error": null,
+      "evidence_path": "docs/qa/screenshots/offline-readiness/d01-retest-disconnected.json"
+    }
+  },
+  "restart_recheck": "passed_with_fresh_dom_and_api",
+  "http_error": "数据载入失败请求失败（HTTP 502） 重新请求",
+  "disconnected_state": "passed_without_mock_fallback",
+  "console_errors_context": "expected local API 502 responses after the backend was deliberately stopped",
+  "phase_exit_codes": {
+    "create": 0,
+    "restart_recheck": 0,
+    "disconnected": 0
+  },
+  "overall_acceptance_status": "passed"
+}
