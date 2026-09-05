@@ -9,7 +9,8 @@
     "test": "vitest run",
     "test:watch": "vitest",
     "build": "npm run typecheck && vite build",
-    "preview": "vite preview"
+    "preview": "vite preview",
+    "acceptance:offline-browser": "node scripts/offline-readiness-browser.mjs"
   },
   "dependencies": {
     "lucide-react": "latest",
@@ -26,6 +27,7 @@
     "@types/react-dom": "latest",
     "@vitejs/plugin-react": "latest",
     "jsdom": "latest",
+    "playwright-core": "^1.63.0",
     "typescript": "latest",
     "vite": "latest",
     "vitest": "latest"

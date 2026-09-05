@@ -57,3 +57,13 @@ npm --prefix frontend run typecheck
 npm --prefix frontend test
 npm --prefix frontend run build
 ```
+
+API 模式的真实浏览器验收使用本机 Edge/Chrome，不下载浏览器：
+
+```powershell
+npm --prefix frontend run acceptance:offline-browser -- create
+npm --prefix frontend run acceptance:offline-browser -- restart_recheck
+npm --prefix frontend run acceptance:offline-browser -- disconnected
+```
+
+运行前需按 [`../tests/acceptance/offline-readiness/browser-checklist.md`](../tests/acceptance/offline-readiness/browser-checklist.md) 启动本地前后端并配置证据目录。脚本会阻止非 localhost HTTP(S) 请求；语义错误、非断连阶段 console error 或外部请求都会以非零退出并保留证据。
