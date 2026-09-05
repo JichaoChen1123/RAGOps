@@ -8,12 +8,14 @@ import {
   Database,
   FlaskConical,
   Gauge,
+  Menu,
   GitCompareArrows,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
   Settings,
   SlidersHorizontal,
+  X,
 } from 'lucide-react';
 import { useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams, useSearchParams } from 'react-router-dom';
@@ -49,6 +51,7 @@ export function WorkspaceShell() {
   const location = useLocation();
   const [searchParams, setSearchParams] = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
+  const [mobileNavOpen, setMobileNavOpen] = useState(false);
   const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
@@ -61,6 +64,24 @@ export function WorkspaceShell() {
   const [feedback, setFeedback] = useState<string | null>(null);
   const scenario = (searchParams.get('state') as ViewScenario | null) ?? 'normal';
   const page = pageTitles.find((item) => location.pathname.includes(item.match)) ?? pageTitles[4];
+
+  useEffect(() => {
+    if (mobileNavOpen) document.getElementById('workspace-content')?.focus({ preventScroll: true });
+    setMobileNavOpen(false);
+    setProjectMenuOpen(false);
+  }, [location.pathname]);
+
+  useEffect(() => {
+    if (!mobileNavOpen) return;
+    const closeMenu = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') {
+        setMobileNavOpen(false);
+        document.getElementById('mobile-nav-toggle')?.focus();
+      }
+    };
+    window.addEventListener('keydown', closeMenu);
+    return () => window.removeEventListener('keydown', closeMenu);
+  }, [mobileNavOpen]);
 
   useEffect(() => {
     const openCommandSearch = (event: KeyboardEvent) => {
@@ -105,8 +126,10 @@ export function WorkspaceShell() {
     : runtimeStatus.state === 'loading' ? '读取中' : '未知';
 
   return (
-    <div className={`app-shell ${collapsed ? 'sidebar-is-collapsed' : ''}`}>
-      <aside className="sidebar">
+    <div className={`app-shell ${collapsed ? 'sidebar-is-collapsed' : ''} ${mobileNavOpen ? 'mobile-nav-open' : ''}`}>
+      <a className="skip-link" href="#workspace-content">跳至工作区</a>
+      <button id="mobile-nav-toggle" className="mobile-nav-toggle" type="button" aria-label={mobileNavOpen ? '关闭主导航' : '打开主导航'} aria-expanded={mobileNavOpen} aria-controls="workspace-sidebar" onClick={() => setMobileNavOpen((value) => !value)}>{mobileNavOpen ? <X size={20} /> : <Menu size={20} />}<span>RAGOps / 导航</span></button>
+      <aside className="sidebar" id="workspace-sidebar">
         <div className="brand">
           <div className="brand-mark"><Activity size={20} /></div>
           <div><strong>RAGOps</strong><span>Quality Console</span></div>
@@ -147,10 +170,10 @@ export function WorkspaceShell() {
 
         <nav aria-label="主导航">
           <span className="nav-section">项目</span>
-          <NavLink title="项目概览" to={preserveState(`/projects/${projectId}/overview`)}><Gauge size={17} /><span className="nav-label">项目概览</span></NavLink>
-          <NavLink title="数据集" to={preserveState(`/projects/${projectId}/datasets`)}><Database size={17} /><span className="nav-label">数据集</span></NavLink>
+          <NavLink aria-label="项目概览" title="项目概览" to={preserveState(`/projects/${projectId}/overview`)}><Gauge size={17} /><span className="nav-label">项目概览</span></NavLink>
+          <NavLink aria-label="数据集" title="数据集" to={preserveState(`/projects/${projectId}/datasets`)}><Database size={17} /><span className="nav-label">数据集</span></NavLink>
           <span className="nav-section">评测与诊断</span>
-          <NavLink title="评测任务" to={preserveState(`/projects/${projectId}/evaluations`)}><FlaskConical size={17} /><span className="nav-label">评测任务</span><span className="nav-count">3</span></NavLink>
+          <NavLink aria-label="评测任务" title="评测任务" to={preserveState(`/projects/${projectId}/evaluations`)}><FlaskConical size={17} /><span className="nav-label">评测任务</span></NavLink>
           <button className="nav-item nav-coming-soon" type="button" aria-label="版本对比，即将推出" onClick={() => setRoadmapOpen(true)}>
             <GitCompareArrows size={17} />
             <span className="nav-item-copy"><span className="nav-label">版本对比</span><small>模型 / Prompt 回归</small></span>
@@ -202,7 +225,7 @@ export function WorkspaceShell() {
             <span className="shortcut">⌘ K</span>
           </div>
         </header>
-        <main className="content"><Outlet context={{ scenario }} /></main>
+        <main className="content" id="workspace-content" tabIndex={-1}><Outlet context={{ scenario }} /></main>
       </div>
 
       <Dialog open={searchOpen} title="搜索工作台" eyebrow="COMMAND SEARCH" onClose={() => setSearchOpen(false)}>

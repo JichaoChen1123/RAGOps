@@ -1,0 +1,327 @@
+{
+  "mode": "mock",
+  "viewports": [
+    {
+      "name": "overview-1440",
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "textLength": 1288,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "datasets-1440",
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "textLength": 573,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "evaluations-1440",
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "textLength": 786,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "report-1440",
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "textLength": 1156,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "diagnosis-1440",
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "textLength": 1562,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "not-found-1440",
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "textLength": 44,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "overview-820",
+      "width": 820,
+      "height": 900,
+      "clientWidth": 820,
+      "scrollWidth": 820,
+      "textLength": 1288,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "datasets-820",
+      "width": 820,
+      "height": 900,
+      "clientWidth": 820,
+      "scrollWidth": 820,
+      "textLength": 573,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "evaluations-820",
+      "width": 820,
+      "height": 900,
+      "clientWidth": 820,
+      "scrollWidth": 820,
+      "textLength": 786,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "report-820",
+      "width": 820,
+      "height": 900,
+      "clientWidth": 820,
+      "scrollWidth": 820,
+      "textLength": 1156,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "diagnosis-820",
+      "width": 820,
+      "height": 900,
+      "clientWidth": 820,
+      "scrollWidth": 820,
+      "textLength": 1562,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "not-found-820",
+      "width": 820,
+      "height": 900,
+      "clientWidth": 820,
+      "scrollWidth": 820,
+      "textLength": 44,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "overview-390",
+      "width": 390,
+      "height": 900,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 1109,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "datasets-390",
+      "width": 390,
+      "height": 900,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 392,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "evaluations-390",
+      "width": 390,
+      "height": 900,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 605,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "report-390",
+      "width": 390,
+      "height": 900,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 975,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "diagnosis-390",
+      "width": 390,
+      "height": 900,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 1381,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "not-found-390",
+      "width": 390,
+      "height": 900,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 44,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "create-dialog-1440",
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "textLength": 650,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "sample-table-1440",
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "textLength": 1239,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "source-dialog-1440",
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "textLength": 1824,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "create-dialog-390",
+      "width": 390,
+      "height": 900,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 469,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "sample-table-390",
+      "width": 390,
+      "height": 900,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 1058,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "source-dialog-390",
+      "width": 390,
+      "height": 900,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 1643,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "state-loading-390",
+      "width": 390,
+      "height": 844,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 111,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "state-empty-390",
+      "width": 390,
+      "height": 844,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 305,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "state-error-390",
+      "width": 390,
+      "height": 844,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 123,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "state-partial-390",
+      "width": 390,
+      "height": 844,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 1117,
+      "surface": "rgb(224, 229, 236)"
+    }
+  ],
+  "interactions": [
+    "Mock 1440: navigation, stack keyboard/wrap, create/import, search, evaluation, report/table/export, diagnosis/citation/review, dialog focus/Escape",
+    "Mock 390: navigation, stack keyboard/wrap, create/import, search, evaluation, report/table/export, diagnosis/citation/review, dialog focus/Escape",
+    "Motion: rear fan-out, fixed shadow, no button transform, reduced motion disables transitions and lift"
+  ],
+  "consoleErrors": [],
+  "externalRequests": [],
+  "contrast": [
+    {
+      "token": "--ink",
+      "surface": "--surface",
+      "ratio": 9.18
+    },
+    {
+      "token": "--ink",
+      "surface": "--surface-light",
+      "ratio": 10.22
+    },
+    {
+      "token": "--muted",
+      "surface": "--surface",
+      "ratio": 5.18
+    },
+    {
+      "token": "--muted",
+      "surface": "--surface-light",
+      "ratio": 5.76
+    },
+    {
+      "token": "--accent",
+      "surface": "--surface",
+      "ratio": 5.66
+    },
+    {
+      "token": "--accent",
+      "surface": "--surface-light",
+      "ratio": 6.3
+    },
+    {
+      "token": "--green",
+      "surface": "--surface",
+      "ratio": 5.59
+    },
+    {
+      "token": "--green",
+      "surface": "--surface-light",
+      "ratio": 6.22
+    },
+    {
+      "token": "--red",
+      "surface": "--surface",
+      "ratio": 5.47
+    },
+    {
+      "token": "--red",
+      "surface": "--surface-light",
+      "ratio": 6.09
+    },
+    {
+      "token": "--amber",
+      "surface": "--surface",
+      "ratio": 5.22
+    },
+    {
+      "token": "--amber",
+      "surface": "--surface-light",
+      "ratio": 5.82
+    }
+  ],
+  "passed": true
+}

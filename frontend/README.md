@@ -2,6 +2,8 @@
 
 React + TypeScript + Vite 实现的 RAGOps 工程工作台。默认使用内置脱敏 fixture，可演示“评测任务 → 报告 → 样本诊断 → 检索与引用证据”完整链路。
 
+当前五个业务页面和共享交互使用统一的新拟物主题；概览运行记录和报告样本支持三层 Card Stack 浏览、方向键切换和报告表格视图。手机端可展开完整导航，对话框支持焦点循环和 Escape。见 [界面设计与字段说明](../docs/design/neumorphism-card-stack.md) 和 [浏览器验收记录](../docs/qa/neumorphism-card-stack-acceptance.md)。
+
 完整的克隆、Docker 启动、环境变量和后端联调用法见 [`../docs/quickstart.md`](../docs/quickstart.md)。
 
 ## 本地运行

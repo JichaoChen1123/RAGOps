@@ -6,8 +6,8 @@ export function FailureChart({ buckets }: { buckets: FailureBucket[] }) {
 
   return (
     <div className="failure-chart" aria-label={`失败类型分布，共 ${total} 条`}>
-      <div className="donut" style={{ '--critical-ratio': `${total ? (buckets[0]?.count ?? 0) / total * 100 : 0}%` } as React.CSSProperties}>
-        <div><strong>{total}</strong><span>失败样本</span></div>
+      <div className="donut">
+        <div><strong>{total}</strong><span>诊断记录</span></div>
       </div>
       <div className="failure-bars">
         {buckets.map((bucket) => (
