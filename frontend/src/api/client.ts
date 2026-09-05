@@ -480,7 +480,7 @@ function mapSample(raw: RawEvaluationSample): SampleSummary {
     referenceAnswer: parts.referenceAnswer,
     historicalAnswer: parts.historicalAnswer,
     generatedAnswer: parts.generatedAnswer,
-    failureType: recordString(diagnosisRecord, 'category', 'label', 'rule', 'code') ?? 'unclassified',
+    failureType: recordString(diagnosisRecord, 'rule_id', 'category', 'label', 'rule', 'code') ?? 'unclassified',
     severity: normalizeSeverity(recordString(diagnosisRecord, 'severity')),
     recallAt5: typeof recall?.value === 'number' ? recall.value : null,
     recallAt5Status: recall?.status ?? 'not_evaluated',
@@ -571,7 +571,7 @@ function mapReport(raw: RawEvaluationReport, task: EvaluationTask, samples: Samp
 
 function diagnosisRule(raw: Record<string, unknown> | undefined, fallback: string) {
   return {
-    label: recordString(raw, 'label', 'category', 'rule', 'code') ?? fallback,
+    label: recordString(raw, 'rule_id', 'label', 'category', 'rule', 'code') ?? fallback,
     confidence: recordNumber(raw, 'confidence', 'score'),
     severity: normalizeSeverity(recordString(raw, 'severity')),
     explanation: recordString(raw, 'explanation', 'message', 'reason') ?? '后端未返回更多诊断说明。',

@@ -59,6 +59,9 @@ const citationLabel = (citation: CitationEvidence) => citation.supportsClaim ===
     : citation.resolved === true ? '已解析 · 支持性未评估'
       : citation.resolved === false ? '未解析' : '解析与支持性未知';
 
+const secondaryDiagnosisKey = (item: SampleDiagnosis['secondaryDiagnoses'][number], index: number) =>
+  `${item.label}:${item.evidenceIds.join(',')}:${index}`;
+
 export function DiagnosisPage() {
   const { projectId = 'demo', taskId = '', sampleId = '' } = useParams();
   const { scenario } = useOutletContext<WorkspaceOutletContext>();
@@ -172,7 +175,7 @@ export function DiagnosisPage() {
             <div className="citation-list">{diagnosis.citations.length === 0 && <span className="unknown-value">没有引用记录</span>}{diagnosis.citations.map((citation) => <button key={citation.id} className={`citation-chip citation-${citation.supportsClaim === true ? 'supported' : citation.supportsClaim === false ? 'unsupported' : 'unknown'}`} type="button" onClick={() => selectCitation(citation)}>{citation.marker} {citation.supportsClaim === true ? <Check size={13} /> : citation.supportsClaim === false ? <X size={13} /> : null} {citationLabel(citation)} <ChevronRight size={13} /></button>)}</div>
           </div>
           {diagnosis.run.error && <div className="run-error" role="alert"><strong>{diagnosis.run.error.code}</strong><p>{diagnosis.run.error.message}</p><small>尝试 {diagnosis.run.error.attempts} 次 · {diagnosis.run.error.retryable ? '可重试' : '不可自动重试'}</small></div>}
-          {diagnosis.secondaryDiagnoses.map((item) => <div className="secondary-diagnosis" key={item.label}><StatusBadge value={item.severity} /><div><strong>{item.label}</strong><p>{item.explanation}</p></div></div>)}
+          {diagnosis.secondaryDiagnoses.map((item, index) => <div className="secondary-diagnosis" key={secondaryDiagnosisKey(item, index)}><StatusBadge value={item.severity} /><div><strong>{item.label}</strong><p>{item.explanation}</p></div></div>)}
         </section>
       </div>
       <section className="run-metadata" aria-label="本次运行元信息">
