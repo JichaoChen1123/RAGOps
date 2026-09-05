@@ -38,7 +38,7 @@ RAGOps 是一个面向 RAG 系统的质量控制台。它把评测数据集、�
 
 > 重要边界：默认 `VITE_API_MODE=mock` 不会调用真实模型，也不会写入生产数据。它用于稳定演示产品链路和前端交互。真实 API 联调请使用 `VITE_API_MODE=api`。
 
-> 集成验收状态：本地 API/SQLite/重启和浏览器主流程已实测，但诊断 `rule_id` 在前端被显示为 `unclassified`。修复并复测前不能宣称离线阶段全部通过，详见 [离线基础集成验收记录](docs/qa/offline-readiness-acceptance.md)。
+> 集成验收状态：D01 诊断 `rule_id`/React key 修复已在 `1698150bf8a63dfd534b4c10a2fc64287cbcf993` 完成独立复测；本地 API/SQLite 重启及浏览器 create/restart/disconnected 通过。Docker 容器和真实模型连接仍未在本机验证，详见 [离线基础集成验收记录](docs/qa/offline-readiness-acceptance.md)。
 
 ## 目录
 
@@ -371,7 +371,7 @@ docker-compose.yml   本地一键启动编排
 
 1. 接入真实文档解析、chunk 切分和索引构建。
 2. 接入 Embedding/Rerank 与向量数据库，例如 FAISS、Qdrant 或 Milvus。
-3. 修复诊断 `rule_id` 前端映射和重复 key，并将现有 API 模式浏览器脚本接入稳定 CI runner。
+3. 将现有 API 模式浏览器脚本接入稳定 CI runner，并增加跨浏览器视觉回归。
 4. 在用户明确授权、secret 隔离和预算限制下接入真实 LLM provider，并记录 provider、model、Prompt、index 版本。
 5. 增加跨浏览器截图回归，持续覆盖桌面和移动端视口。
 6. 增加任务队列、鉴权、多租户、对象存储和可观测性。

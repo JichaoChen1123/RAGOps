@@ -1,6 +1,67 @@
 # 离线基础集成验收记录
 
-## 验收结论
+## D01 修复后独立复测（WOR-68）
+
+- 原失败基线：`10ef6b33c4373ee98f6e82e9a053212e5105252f`；原始失败证据和结论完整保留在下文，不作为修复后通过证明。
+- 修复后受测基线：`1698150bf8a63dfd534b4c10a2fc64287cbcf993`；Git 已确认包含 D01 修复 `6d6c49d80c9daebf97eaf7faac72ea04b7c32ac9` 与原 QA 资产 `1807279f386f9ae59d2fce9e21a6d14e8b42dd66`。
+- 浏览器脚本版本：`wor-68-d01-retest-v1`。脚本从当前 Git HEAD 记录实际 SHA，可用 `RAGOPS_BROWSER_EXPECTED_SHA` 拒绝错误基线；三阶段分别写证据和退出码，重启阶段重新读取 DOM 与 API，不继承创建阶段的诊断标签。
+- 复测结论：**D01 已修复，离线浏览器与报告语义复测通过**。`create=0`、`restart_recheck=0`、`disconnected=0`；不再出现 `unclassified` 或 React duplicate-key 告警，报告主诊断分布未漏项。
+
+### 本轮环境与实际结果
+
+| 检查 | 输入与操作 | 实际结果 |
+| --- | --- | --- |
+| 基线与差异 | 在独立分支核对 HEAD 和两个祖先提交；比较原失败与新基线 | HEAD 精确为 `1698150b...`；`backend/`、`tests/backend/`、`tests/evaluation/` 无差异 |
+| 前端静态与回归 | `npm.cmd --prefix frontend run typecheck`、完整 Vitest、production build | 均退出 0；5 个测试文件、43 项通过；build 转换 1831 modules |
+| 产品浏览器 create | 全新 SQLite、API 模式、1440×900 与 390×844；页面导入并发布 12 条 2.0 人工样本，创建 mock 任务 | 退出 0；任务 `01a07137-fae5-7d14-984e-3c09e71e27cd` 完成，质量 `not_evaluated/unknown/null`，显示 `SIMULATED` |
+| 产品浏览器 restart | 停止首个后端 PID，使用同一 SQLite 启动新后端进程；重新读取报告、诊断 DOM 与 API | 退出 0；任务、样本 `01a07137-fb0c-739c-892b-70ef48c0fee1`、回答和报告 ID 保持不变 |
+| 产品浏览器 disconnected | 再停止后端并保持 Vite 运行，刷新原报告 URL | 退出 0；显示 `HTTP 502`、明确失败和“重新请求”，没有 fixture/SIMULATED 报告回退 |
+| 本地 API 重启脚本 | `run-local-restart.ps1 -Port 18015`，另用 3 条人工样本 | 退出 0；创建、导入、发布、mock 执行、报告、导出与同库进程重启复查通过 |
+| 网络与凭据隔离 | 浏览器拦截非 localhost 请求；扫描 production build、三阶段 JSON 和本轮前后端日志 | 外部请求 0；3 个凭据哨兵匹配 0 |
+| 进程清理 | 仅停止本轮启动的 uvicorn/node PID，复查 `18015/18016/15173` | 监听数 0 |
+
+### 诊断、报告与页面语义
+
+创建和后端重启后都从当前 API 响应读取到同一组规则，并与当前 DOM 逐项核对：
+
+1. `retrieval.missing_evidence`
+2. `citation.missing`
+3. `rerank.no_gain_or_regression`
+
+两个阶段的 `diagnosis_labels` 均为上述三项，`duplicate_key_warnings=[]`、非断连阶段 `console_errors=[]`。报告 DOM 显示主诊断 `retrieval.missing_evidence × 12`，与 API 对 12 条样本的首诊断聚合一致，没有 `unclassified`。
+
+API 与页面同时证明：前端为 API 数据、后端执行器为 `mock`、提供方未配置；任务执行成功但质量未评估、结论和分数未知；参考答案与本次 `[mock]` 回答分区展示；本样本 `historical_answer=null`，页面没有伪造历史回答区；上下文来源为 `provided`，引用数为 0 并显示“没有引用记录”，Token 显示未知。刷新和后端进程重启后 ID 与回答保持不变。
+
+1440×900 桌面和 390×844 移动截图经尺寸断言与人工复核：页面非空、无横向溢出、无异常重叠。断连阶段的 8 条 502 console error 是主动停止后端后的预期本地代理响应，独立记录在断连证据中，没有覆盖创建或重启阶段结果。
+
+机器可读证据：
+
+- [`d01-retest-create.json`](screenshots/offline-readiness/d01-retest-create.json)
+- [`d01-retest-restart_recheck.json`](screenshots/offline-readiness/d01-retest-restart_recheck.json)
+- [`d01-retest-disconnected.json`](screenshots/offline-readiness/d01-retest-disconnected.json)
+- [`d01-retest-state.json`](screenshots/offline-readiness/d01-retest-state.json)（仅作跨阶段状态与汇总；各阶段原始结果以上述三个独立文件为准）
+
+新截图：
+
+- [API 数据集桌面页](screenshots/offline-readiness/d01-retest-api-dataset-desktop.png)
+- [API 报告桌面页](screenshots/offline-readiness/d01-retest-api-report-desktop.png)
+- [API 诊断移动页](screenshots/offline-readiness/d01-retest-api-diagnosis-mobile.png)
+- [后端重启后的诊断页](screenshots/offline-readiness/d01-retest-api-diagnosis-after-restart.png)
+- [后端断开后的显式错误页](screenshots/offline-readiness/d01-retest-api-disconnected-desktop.png)
+
+### 回归继承、Docker 与能力边界
+
+新基线相对原失败基线没有后端、评测或离线契约实现变化，因此本轮没有把旧数字冒充新提交实测：A01–A08 的 `109 passed`、定向契约 `32 passed` 和分支覆盖率 `90.69%` 仅引用 WOR-66 在旧受测 SHA `10ef6b33...` 的证据；本轮在新 SHA 实际重跑的是前端 43 项、production build、本地 API/SQLite 重启和产品浏览器三阶段。
+
+`docker compose config --quiet` 本轮退出 0；`docker info --format '{{json .ServerVersion}}'` 退出 1，仍因 `dockerDesktopLinuxEngine` 命名管道不存在。本机镜像构建、容器启动和数据卷重启未执行，不能用远端镜像构建代替；没有安装、启动或登录 Docker。
+
+| 代码已实现 | 离线测试通过 | 真实连接已验证 |
+| --- | --- | --- |
+| provider-neutral 契约、mock/OpenAI-compatible 适配器、安全门、2.0 数据/报告、幂等迁移、前端 API 模式、D01 rule_id/key 修复 | 前端 43 项与 build、本地 API/SQLite 重启、浏览器 create/restart/disconnected、诊断/报告/跨端/断连语义 | **未执行，按范围禁止**；真实模型、账号、API/订阅和真实问答效果均未验证或评测 |
+
+## WOR-66 原始验收结论（历史证据）
+
+> 自本节起至文末保留 WOR-66 在旧 SHA `10ef6b33...` 的原始失败记录；当前修复后结论以文首 WOR-68 章节为准。
 
 - 验收基线：`10ef6b33c4373ee98f6e82e9a053212e5105252f`，阶段分支 `work/wor-61-offline-readiness`，2026-09-05 独立验收。
 - 总结论：**离线验收不通过，需完成 1 项有界前端修复后复测**。后端/评测回归、本地 API 闭环、SQLite 重启持久化、桌面与移动端主流程、断连不回退 mock 均通过；诊断页没有识别后端 `rule_id`，3 条有效诊断均被渲染为 `unclassified`。

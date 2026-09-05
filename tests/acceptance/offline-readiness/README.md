@@ -33,7 +33,7 @@ Docker 隔离闭环：
 pwsh -File tests/acceptance/offline-readiness/run-docker-loop.ps1 -RepoRoot .
 ```
 
-真实浏览器检查见 [浏览器检查表](browser-checklist.md)。仓库提供 `frontend/scripts/offline-readiness-browser.mjs`，通过 `npm --prefix frontend run acceptance:offline-browser -- <phase>` 驱动本机 Edge/Chrome；不下载浏览器。浏览器脚本和截图只能补充 API 闭环；不得用截图代替 `invoke-api-loop.ps1` 的创建、导入、发布、运行、报告和导出断言。
+真实浏览器检查见 [浏览器检查表](browser-checklist.md)。仓库提供 `frontend/scripts/offline-readiness-browser.mjs`，通过 `npm --prefix frontend run acceptance:offline-browser -- <phase>` 驱动本机 Edge/Chrome；不下载浏览器。脚本按 create/restart_recheck/disconnected 分别保留机器证据与退出码，重启阶段重新读取当前 DOM/API。浏览器脚本和截图只能补充 API 闭环；不得用截图代替 `invoke-api-loop.ps1` 的创建、导入、发布、运行、报告和导出断言。
 
 ## 证据要求
 

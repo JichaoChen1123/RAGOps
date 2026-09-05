@@ -32,7 +32,9 @@ python -m http.server 4173 --directory tests/acceptance/offline-readiness
 ```powershell
 $env:RAGOPS_FRONTEND_URL = 'http://127.0.0.1:5173'
 $env:RAGOPS_BROWSER_OUTPUT_DIR = (Resolve-Path docs/qa/screenshots/offline-readiness).Path
-$env:RAGOPS_BROWSER_STATE = Join-Path $env:RAGOPS_BROWSER_OUTPUT_DIR 'browser-api-evidence.json'
+$env:RAGOPS_BROWSER_EVIDENCE_PREFIX = "browser-api-$((Get-Date).ToUniversalTime().ToString('yyyyMMddTHHmmssZ'))"
+$env:RAGOPS_BROWSER_STATE = Join-Path $env:RAGOPS_BROWSER_OUTPUT_DIR "$env:RAGOPS_BROWSER_EVIDENCE_PREFIX-state.json"
+$env:RAGOPS_BROWSER_EXPECTED_SHA = (git rev-parse HEAD).Trim()
 npm --prefix frontend run acceptance:offline-browser -- create
 ```
 
@@ -48,8 +50,8 @@ npm --prefix frontend run acceptance:offline-browser -- restart_recheck
 npm --prefix frontend run acceptance:offline-browser -- disconnected
 ```
 
-脚本只允许浏览器访问 `localhost`/`127.0.0.1`，出现外部 HTTP(S) 请求会立即阻断并失败。每个阶段都覆盖前一阶段的 JSON 状态文件；必须按顺序执行。语义错误、非断连阶段 console error 或外部请求都会产生非零退出码并保留证据。执行结束后只停止本次启动的后端/前端 PID。
+脚本只允许浏览器访问 `localhost`/`127.0.0.1`，出现外部 HTTP(S) 请求会立即阻断并失败。必须按顺序执行；create 要求全新的状态文件。共享 state 只传递 ID/URL 并保留累计结果，每阶段另写 `<prefix>-create.json`、`<prefix>-restart_recheck.json`、`<prefix>-disconnected.json`，其中包含实际 Git SHA、脚本版本和该阶段退出码。重启阶段会重新读取当前 DOM/API 和诊断标签，断连的预期 502 不会覆盖前两阶段 console 结果。语义错误、duplicate-key、非断连阶段 console error 或外部请求都会产生非零退出码并保留证据。执行结束后只停止本次启动的后端/前端 PID。
 
 ## 证据记录
 
-记录集成 SHA、浏览器和版本、桌面/移动视口、数据集 ID、任务 ID、`invoke-api-loop.ps1` 输出、重启前后结果及失败项。截图只用于布局和状态补充，不能单独作为 API 端到端证据。
+记录集成 SHA、浏览器和版本、桌面/移动视口、数据集 ID、任务 ID、三个阶段各自退出码、`invoke-api-loop.ps1` 输出、重启前后当前 DOM/API 及失败项。截图只用于布局和状态补充，不能单独作为 API 端到端证据。
