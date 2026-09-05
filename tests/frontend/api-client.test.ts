@@ -120,6 +120,30 @@ const rawSampleV2 = {
   reviewed_at: null,
 };
 
+const rawDiagnosedSampleV2 = {
+  ...rawSampleV2,
+  diagnoses: [
+    {
+      rule_id: 'retrieval.missing_evidence', rule_version: '1.0.0', profile_version: 'mvp-default-1.0.0',
+      status: 'suspected', severity: 'high', confidence: 0.75,
+      reason: 'No observed retrieval candidate contains any gold evidence.',
+      evidence: [{ gold_ids: ['ev-1'] }], missing_inputs: [], blocked_by_rule_ids: [], suggestions: [],
+    },
+    {
+      rule_id: 'citation.missing', rule_version: '1.0.0', profile_version: 'mvp-default-1.0.0',
+      status: 'confirmed', severity: 'medium', confidence: 1,
+      reason: 'The parsed citation list is empty.',
+      evidence: [{ citation_count: 0 }], missing_inputs: [], blocked_by_rule_ids: [], suggestions: [],
+    },
+    {
+      rule_id: 'rerank.no_gain_or_regression', rule_version: '1.0.0', profile_version: 'mvp-default-1.0.0',
+      status: 'confirmed', severity: 'high', confidence: 0.95,
+      reason: 'Gold-aligned evidence fell outside the effective window after reranking.',
+      evidence: [{ k: 5 }], missing_inputs: [], blocked_by_rule_ids: [], suggestions: [],
+    },
+  ],
+};
+
 const rawReportV2 = {
   schema_version: '2.0',
   id: 'report-1',
@@ -261,6 +285,58 @@ describe('typed API client 2.0 semantics', () => {
     expect(diagnosis.citations[0]).toMatchObject({ resolved: true, supportsClaim: null });
     expect(diagnosis.metrics.find((metric) => metric.key === 'citation_support_rate')).toMatchObject({ status: 'not_evaluated', value: null });
     expect(diagnosis.run).toMatchObject({ latencyMs: null, usage: null, cost: null });
+  });
+
+  it('maps snake_case diagnosis rules into sample details and primary-rule report buckets', async () => {
+    const legacyDiagnosedSample = {
+      ...rawSampleV2,
+      id: 'result-legacy-diagnosis',
+      sample_id: 'sample-legacy-diagnosis',
+      diagnoses: [{ label: 'legacy.diagnosis', severity: 'medium', reason: 'Legacy diagnosis field.' }],
+    };
+    const undiagnosedSample = {
+      ...rawSampleV2,
+      id: 'result-without-diagnosis',
+      sample_id: 'sample-without-diagnosis',
+      diagnoses: [],
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/report')) return jsonResponse({
+        ...rawReportV2,
+        execution_summary: { outcome: 'succeeded', total_count: 3, succeeded_count: 3, failed_count: 0, success_rate: 1 },
+      });
+      if (url.endsWith('/samples')) return jsonResponse({
+        items: [rawDiagnosedSampleV2, legacyDiagnosedSample, undiagnosedSample], total: 3,
+      });
+      return jsonResponse({ ...rawJobV2, total_count: 3, succeeded_count: 3 });
+    }) as unknown as typeof fetch;
+    const client = createApiClient({ mode: 'api', baseUrl: '/api/v1', fetcher });
+
+    const report = await client.getEvaluationReport('project-a', 'job-1');
+    const diagnosis = await client.getSampleDiagnosis('project-a', 'job-1', 'sample-1');
+    const legacyDiagnosis = await client.getSampleDiagnosis('project-a', 'job-1', 'sample-legacy-diagnosis');
+    const missingDiagnosis = await client.getSampleDiagnosis('project-a', 'job-1', 'sample-without-diagnosis');
+
+    expect(diagnosis.primaryDiagnosis.label).toBe('retrieval.missing_evidence');
+    expect(diagnosis.secondaryDiagnoses.map((item) => item.label)).toEqual([
+      'citation.missing',
+      'rerank.no_gain_or_regression',
+    ]);
+    expect(report.samples.map((sample) => sample.failureType)).toEqual([
+      'retrieval.missing_evidence',
+      'legacy.diagnosis',
+      'unclassified',
+    ]);
+    expect(report.failures.map(({ key, label, count }) => ({ key, label, count }))).toEqual([
+      { key: 'retrieval.missing_evidence', label: 'retrieval.missing_evidence', count: 1 },
+      { key: 'legacy.diagnosis', label: 'legacy.diagnosis', count: 1 },
+    ]);
+    expect(legacyDiagnosis.primaryDiagnosis.label).toBe('legacy.diagnosis');
+    expect(missingDiagnosis).toMatchObject({
+      primaryDiagnosis: { label: '未生成诊断' },
+      secondaryDiagnoses: [],
+    });
   });
 
   it('does not reinterpret legacy model, context source, simulation or quality fields', async () => {
