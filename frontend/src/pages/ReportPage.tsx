@@ -7,6 +7,7 @@ import { Dialog, Toast } from '../components/Interaction';
 import { MetricCard } from '../components/MetricCard';
 import { Panel } from '../components/Panel';
 import { EmptyState, ErrorState, LoadingState, PartialDataBanner } from '../components/PageState';
+import { SampleStack } from '../components/SampleStack';
 import { StatusBadge } from '../components/StatusBadge';
 import type { WorkspaceOutletContext } from '../components/WorkspaceShell';
 import { useApiResource } from '../hooks/useApiResource';
@@ -74,6 +75,7 @@ export function ReportPage() {
   const { projectId = 'demo', taskId = '' } = useParams();
   const { scenario } = useOutletContext<WorkspaceOutletContext>();
   const [sampleFilter, setSampleFilter] = useState<SampleFilter>('all');
+  const [sampleView, setSampleView] = useState<'stack' | 'table'>('stack');
   const [compareOpen, setCompareOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -164,8 +166,10 @@ export function ReportPage() {
           </dl>
         </Panel>
       </div>
-      <Panel title="样本运行记录" eyebrow="问题 / 标签 / 本次输出 / 证据" action={<div className="segmented"><button className={sampleFilter === 'all' ? 'active' : ''} type="button" onClick={() => setSampleFilter('all')}>全部 {report.samples.length}</button><button className={sampleFilter === 'pending' ? 'active' : ''} type="button" onClick={() => setSampleFilter('pending')}>待复核 {report.samples.filter((sample) => sample.reviewStatus === 'pending').length}</button><button className={sampleFilter === 'confirmed' ? 'active' : ''} type="button" onClick={() => setSampleFilter('confirmed')}>已确认 {report.samples.filter((sample) => sample.reviewStatus === 'confirmed').length}</button></div>}>
-        {filteredSamples.length === 0 ? <EmptyState title="没有可展示的样本记录" description="终态报告仍然可查看执行与质量汇总；当前没有符合筛选条件的样本。" /> : <div className="table-wrap">
+      <section className="sample-browser" aria-labelledby="sample-browser-title">
+        <header className="section-heading"><div><h2 id="sample-browser-title">样本运行记录</h2><p>问题、标签、本次输出与证据。</p></div><div className="segmented" aria-label="样本展示方式"><button type="button" aria-pressed={sampleView === 'stack'} onClick={() => setSampleView('stack')}>卡片浏览</button><button type="button" aria-pressed={sampleView === 'table'} onClick={() => setSampleView('table')}>表格列表</button></div></header>
+        <div className="segmented sample-filters" aria-label="复核状态筛选"><button aria-pressed={sampleFilter === 'all'} type="button" onClick={() => setSampleFilter('all')}>全部 {report.samples.length}</button><button aria-pressed={sampleFilter === 'pending'} type="button" onClick={() => setSampleFilter('pending')}>待复核 {report.samples.filter((sample) => sample.reviewStatus === 'pending').length}</button><button aria-pressed={sampleFilter === 'confirmed'} type="button" onClick={() => setSampleFilter('confirmed')}>已确认 {report.samples.filter((sample) => sample.reviewStatus === 'confirmed').length}</button></div>
+        {filteredSamples.length === 0 ? <EmptyState title="没有可展示的样本记录" description="终态报告仍然可查看执行与质量汇总；当前没有符合筛选条件的样本。" /> : sampleView === 'stack' ? <SampleStack samples={filteredSamples} projectId={projectId} taskId={taskId} /> : <div className="table-wrap">
           <table>
             <thead><tr><th>原始问题</th><th>运行</th><th>质量</th><th>Recall@5</th><th>忠实性</th><th>引用支持</th><th>延迟 / 错误</th><th>复核</th><th /></tr></thead>
             <tbody>{filteredSamples.map((sample) => (
@@ -183,7 +187,7 @@ export function ReportPage() {
             ))}</tbody>
           </table>
         </div>}
-      </Panel>
+      </section>
 
       <Dialog open={compareOpen} title="版本对比" eyebrow="CURRENT VS BASELINE" onClose={() => setCompareOpen(false)}>
         <div className="compare-summary"><div><span>当前版本</span><strong>{report.task.modelVersion ?? '模型未知'}</strong><code>{report.task.promptVersion ?? 'Prompt 未知'}</code></div><GitCompareArrows size={22} /><div><span>对比基线</span><strong>{report.baselineLabel ?? '未提供'}</strong><small>不从当前值反推基线</small></div></div>

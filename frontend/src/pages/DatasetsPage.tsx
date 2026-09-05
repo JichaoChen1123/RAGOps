@@ -235,7 +235,7 @@ export function DatasetsPage() {
         ) : filtered.length === 0 ? (
           <EmptyState title="未找到匹配数据集" description="尝试更换关键词或清空搜索、状态筛选条件。" />
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="数据集表格，可横向滚动查看完整字段与操作">
             <table>
               <thead><tr><th>数据集</th><th>状态</th><th>版本</th><th>样本量</th><th>场景覆盖</th><th>负责人</th><th>更新时间</th><th /></tr></thead>
               <tbody>{filtered.map((dataset) => (

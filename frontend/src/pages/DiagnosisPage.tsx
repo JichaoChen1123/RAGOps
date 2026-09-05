@@ -108,7 +108,7 @@ export function DiagnosisPage() {
       return;
     }
     setSelectedContextKey(match.key);
-    document.getElementById('evidence-detail')?.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
+    document.getElementById('evidence-detail')?.scrollIntoView({ behavior: window.matchMedia?.('(prefers-reduced-motion: reduce)').matches ? 'instant' : 'smooth', block: 'nearest' });
   };
 
   const copyAnswer = async () => {
@@ -159,7 +159,7 @@ export function DiagnosisPage() {
           <div className="document-list">
             {diagnosis.contexts.length === 0 && <EmptyState title="没有上下文记录" description="不能据缺失数据假定执行过检索。" />}
             {diagnosis.contexts.map((context) => (
-              <button className={`document-item ${selectedContext?.key === context.key ? 'selected' : ''} ${context.isExpected ? 'expected' : ''}`} type="button" key={context.key} onClick={() => setSelectedContextKey(context.key)}>
+              <button className={`document-item ${selectedContext?.key === context.key ? 'selected' : ''} ${context.isExpected ? 'expected' : ''}`} type="button" key={context.key} aria-pressed={selectedContext?.key === context.key} onClick={() => setSelectedContextKey(context.key)}>
                 <span className="rank">#{context.rank ?? '未知'}</span><span className="document-copy"><strong>{context.title ?? context.docId ?? '文档标识未知'}</strong><small>{originLabel(context.origin)} · {context.source ?? context.docId ?? '来源标识未知'}</small><em>{context.text || '片段内容未知'}</em></span>
                 <span className="document-score"><strong>{context.score === null ? '未知' : context.score.toFixed(2)}</strong><small>来源分数</small>{context.isExpected && <i>参考标签</i>}</span>
               </button>

@@ -102,6 +102,8 @@ Dataset -> Evaluation Job -> Metrics -> Failure Diagnosis -> Review -> Report
 
 ## 界面与功能
 
+WOR-69 已统一现有页面的新拟物视觉，并在最近运行与报告样本加入可键盘操作的 Card Stack；手机端保留完整导航。实际路由、组件、API 字段和界面截图见 [当前前端设计](docs/design/neumorphism-card-stack.md)，验证范围见 [验收记录](docs/qa/neumorphism-card-stack-acceptance.md)。
+
 | 页面 | 作用 | 能体现的工程能力 |
 | --- | --- | --- |
 | 项目概览 | 展示质量分、趋势、失败分布、最近任务和 RAGOps 技术链路。 | 指标聚合、质量门禁、版本上下文、产品化仪表盘。 |
