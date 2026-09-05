@@ -10,16 +10,17 @@ def init_db() -> None:
     settings = get_settings()
     database = Database(settings.database_url)
     try:
-        database.create_all()
+        applied = database.migrate()
     finally:
         database.dispose()
-    print(f"Initialized database schema for {settings.database_url}")
+    suffix = ", ".join(applied) if applied else "already at head"
+    print(f"Initialized database schema for {settings.database_url}: {suffix}")
 
 
 def main() -> None:
     parser = argparse.ArgumentParser(prog="ragops")
     subparsers = parser.add_subparsers(dest="command", required=True)
-    subparsers.add_parser("init-db", help="create the MVP database schema")
+    subparsers.add_parser("init-db", help="migrate the database schema to head")
     args = parser.parse_args()
 
     if args.command == "init-db":

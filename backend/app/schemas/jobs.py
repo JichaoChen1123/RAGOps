@@ -4,7 +4,12 @@ from datetime import datetime
 from enum import Enum
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+
+from app.execution.model import GenerationConfig
+
+
+DEFAULT_PROMPT_TEXT = "Answer only from the provided context; state when evidence is insufficient."
 
 
 class JobStatus(str, Enum):
@@ -21,6 +26,20 @@ class JobOutcome(str, Enum):
     failed = "failed"
 
 
+class QualityStatus(str, Enum):
+    not_evaluated = "not_evaluated"
+    evaluated = "evaluated"
+    partial = "partial"
+    error = "error"
+    legacy_unknown = "legacy_unknown"
+
+
+class QualityVerdict(str, Enum):
+    passed = "passed"
+    failed = "failed"
+    unknown = "unknown"
+
+
 class ReviewStatus(str, Enum):
     pending = "pending"
     confirmed = "confirmed"
@@ -35,76 +54,132 @@ class MetricConfig(BaseModel):
     parameters: dict[str, Any] = Field(default_factory=dict)
 
 
-class EvaluationJobCreate(BaseModel):
+class PromptConfig(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
+    version: str = Field(min_length=1, max_length=120)
+    text: str = Field(min_length=1, max_length=50_000)
+
+    @field_validator("version", "text")
+    @classmethod
+    def non_blank(cls, value: str) -> str:
+        value = value.strip()
+        if not value:
+            raise ValueError("value must not be blank")
+        return value
+
+
+class ExecutionConfig(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    adapter_id: str = Field(default="mock", min_length=1, max_length=80)
+    prompt: PromptConfig
+    generation: GenerationConfig
+    context_policy: Literal["dataset_contexts", "none", "retrieval"] = "dataset_contexts"
+
+
+class QualityRule(BaseModel):
+    model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
+
+    metric_name: str = Field(min_length=1, max_length=120)
+    operator: Literal["gte", "gt", "lte", "lt", "eq"]
+    threshold: float
+
+
+class QualityGate(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    version: str = Field(min_length=1, max_length=40)
+    rules: list[QualityRule] = Field(min_length=1, max_length=50)
+    score_metric: str | None = Field(default=None, min_length=1, max_length=120)
+
+    @model_validator(mode="after")
+    def execution_rate_is_not_a_quality_metric(self) -> QualityGate:
+        names = {rule.metric_name for rule in self.rules}
+        if "execution_success_rate" in names or self.score_metric == "execution_success_rate":
+            raise ValueError("execution_success_rate cannot be used as a quality metric")
+        return self
+
+
+class EvaluationJobCreate(BaseModel):
+    """Frozen 2.0 request plus the documented 1.0 compatibility shape."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    schema_version: Literal["1.0", "2.0"] | None = None
     dataset_id: str = Field(min_length=1)
     name: str | None = Field(default=None, min_length=1, max_length=160)
-    config_version: str | None = Field(
-        default=None,
-        min_length=1,
-        max_length=120,
-        examples=["rag-config-demo-v1"],
-    )
-    model_version: str = Field(default="deterministic-local", min_length=1, max_length=120)
-    prompt_version: str = Field(default="prompt-v1", min_length=1, max_length=120)
+    execution: ExecutionConfig | None = None
     metrics: list[MetricConfig] = Field(default_factory=list)
+    quality_gate: QualityGate | None = None
+
+    config_version: str | None = Field(default=None, min_length=1, max_length=120)
+    model_version: str | None = Field(default=None, min_length=1, max_length=120)
+    prompt_version: str | None = Field(default=None, min_length=1, max_length=120)
 
     @field_validator("name", "config_version", "model_version", "prompt_version")
     @classmethod
     def non_blank_text(cls, value: str | None) -> str | None:
         if value is None:
             return None
-        stripped = value.strip()
-        if not stripped:
+        value = value.strip()
+        if not value:
             raise ValueError("value must not be blank")
-        return stripped
+        return value
+
+    @model_validator(mode="after")
+    def validate_version_shape(self) -> EvaluationJobCreate:
+        legacy_fields = {"config_version", "model_version", "prompt_version"}
+        legacy_supplied = bool(legacy_fields.intersection(self.model_fields_set))
+        if self.execution is not None and legacy_supplied:
+            raise ValueError("AMBIGUOUS_EXECUTION_CONFIG")
+        if self.schema_version == "2.0" and self.execution is None:
+            raise ValueError("schema_version 2.0 requires execution")
+        if self.schema_version == "1.0" and self.execution is not None:
+            raise ValueError("schema_version 1.0 cannot include execution")
+        return self
 
     @property
-    def resolved_config_version(self) -> str:
-        return self.config_version or f"{self.model_version}:{self.prompt_version}"
+    def is_legacy_request(self) -> bool:
+        return self.execution is None
+
+    @property
+    def resolved_execution(self) -> ExecutionConfig:
+        if self.execution is not None:
+            return self.execution
+        return ExecutionConfig(
+            adapter_id="mock",
+            prompt=PromptConfig(
+                version=self.prompt_version or "ragops-default-v1",
+                text=DEFAULT_PROMPT_TEXT,
+            ),
+            generation=GenerationConfig(
+                model="mock-ragops-v1",
+                temperature=0.0,
+                top_p=1.0,
+                max_output_tokens=512,
+                stop=[],
+                seed=None,
+            ),
+            context_policy="dataset_contexts",
+        )
+
+    @property
+    def legacy_model_label(self) -> str | None:
+        return self.model_version or ("deterministic-local" if self.is_legacy_request else None)
 
 
 class EvaluationJobResponse(BaseModel):
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "id": "01912345-6789-7abc-8def-0123456789ab",
-                    "dataset_id": "01912345-6789-7abc-8def-0123456789ac",
-                    "name": "Support regression v1",
-                    "status": "queued",
-                    "outcome": None,
-                    "config_version": "rag-config-demo-v1",
-                    "model_version": "deterministic-local",
-                    "prompt_version": "prompt-v1",
-                    "metric_config": [],
-                    "total_count": 6,
-                    "queued_count": 6,
-                    "running_count": 0,
-                    "succeeded_count": 0,
-                    "failed_count": 0,
-                    "progress": 0.0,
-                    "failure_code": None,
-                    "failure_message": None,
-                    "created_at": "2026-08-26T12:00:00Z",
-                    "started_at": None,
-                    "finished_at": None,
-                    "links": {
-                        "self": "/api/v1/evaluation-jobs/01912345-6789-7abc-8def-0123456789ab",
-                        "samples": "/api/v1/evaluation-jobs/01912345-6789-7abc-8def-0123456789ab/samples",
-                        "report": "/api/v1/evaluation-jobs/01912345-6789-7abc-8def-0123456789ab/report",
-                    },
-                }
-            ]
-        }
-    )
-
+    schema_version: Literal["2.0"] = "2.0"
     id: str
     dataset_id: str
     name: str
     status: JobStatus
     outcome: JobOutcome | None
+    execution_snapshot: dict[str, Any] | None
+    quality_status: QualityStatus
+    quality_verdict: QualityVerdict
+    quality_score: float | None
     config_version: str
     model_version: str
     prompt_version: str
@@ -129,9 +204,15 @@ class EvaluationJobListResponse(BaseModel):
 
 
 class EvaluationSampleResponse(BaseModel):
+    schema_version: Literal["2.0"] = "2.0"
     id: str
     sample_id: str
     question: str
+    labels: dict[str, Any]
+    reference_answer: str | None
+    historical_answer: str | None
+    run: dict[str, Any] | None
+    quality_status: QualityStatus
     status: str
     answer: str | None
     retrieval_results: list[dict[str, Any]]
@@ -150,39 +231,15 @@ class EvaluationSampleListResponse(BaseModel):
 
 
 class EvaluationReportResponse(BaseModel):
-    model_config = ConfigDict(
-        json_schema_extra={
-            "examples": [
-                {
-                    "id": "01912345-6789-7abc-8def-0123456789ad",
-                    "job_id": "01912345-6789-7abc-8def-0123456789ab",
-                    "status": "completed",
-                    "outcome": "succeeded",
-                    "generated_at": "2026-08-26T12:00:01Z",
-                    "summary": {"total_count": 6, "succeeded_count": 6, "failed_count": 0},
-                    "metrics": [
-                        {
-                            "metric_name": "execution_success_rate",
-                            "metric_version": "1.0.0",
-                            "status": "ok",
-                            "value": 1.0,
-                        }
-                    ],
-                    "links": {
-                        "job": "/api/v1/evaluation-jobs/01912345-6789-7abc-8def-0123456789ab",
-                        "samples": "/api/v1/evaluation-jobs/01912345-6789-7abc-8def-0123456789ab/samples",
-                        "export": "/api/v1/evaluation-jobs/01912345-6789-7abc-8def-0123456789ab/report/export",
-                    },
-                }
-            ]
-        }
-    )
-
+    schema_version: Literal["1.0", "2.0"] = "2.0"
     id: str
     job_id: str
     status: JobStatus
     outcome: JobOutcome
     generated_at: datetime
+    execution_summary: dict[str, Any]
+    quality_summary: dict[str, Any]
+    execution_snapshot: dict[str, Any] | None
     summary: dict[str, int]
     metrics: list[dict[str, Any]]
     links: dict[str, str]
@@ -195,7 +252,16 @@ class SampleReviewUpdate(BaseModel):
 
 
 class ReportExportResponse(BaseModel):
-    schema_version: Literal["1.0"] = "1.0"
+    schema_version: Literal["1.0", "2.0"] = "2.0"
     exported_at: datetime
     report: EvaluationReportResponse
     samples: list[EvaluationSampleResponse]
+
+
+class ModelExecutionStatusResponse(BaseModel):
+    schema_version: Literal["2.0"] = "2.0"
+    backend_execution_adapter: str
+    external_calls_enabled: bool
+    execution_available: bool
+    active_adapter: dict[str, Any]
+    providers: list[dict[str, Any]]

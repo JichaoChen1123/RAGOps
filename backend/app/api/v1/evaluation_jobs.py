@@ -3,7 +3,8 @@ from typing import Annotated
 from fastapi import APIRouter, BackgroundTasks, Depends, Header, status
 from sqlalchemy.orm import Session
 
-from app.api.dependencies import get_database, get_session
+from app.api.dependencies import get_database, get_runtime_settings, get_session
+from app.core.config import Settings
 from app.persistence.db import Database
 from app.schemas.jobs import (
     EvaluationJobCreate,
@@ -20,6 +21,7 @@ from app.services import jobs as service
 router = APIRouter()
 SessionDep = Annotated[Session, Depends(get_session)]
 DatabaseDep = Annotated[Database, Depends(get_database)]
+SettingsDep = Annotated[Settings, Depends(get_runtime_settings)]
 
 
 @router.post(
@@ -33,12 +35,18 @@ def create_evaluation_job(
     background_tasks: BackgroundTasks,
     session: SessionDep,
     database: DatabaseDep,
+    settings: SettingsDep,
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key", max_length=128)] = None,
 ) -> EvaluationJobResponse:
-    job, created = service.create_job(session, payload, idempotency_key=idempotency_key)
+    job, created = service.create_job(
+        session,
+        payload,
+        idempotency_key=idempotency_key,
+        settings=settings,
+    )
     response = service.job_to_response(job)
     if created:
-        background_tasks.add_task(service.execute_job, database, job.id)
+        background_tasks.add_task(service.execute_job, database, job.id, settings)
     return response
 
 

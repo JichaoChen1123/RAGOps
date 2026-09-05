@@ -4,10 +4,15 @@ from fastapi import Request
 from sqlalchemy.orm import Session
 
 from app.persistence.db import Database
+from app.core.config import Settings
 
 
 def get_database(request: Request) -> Database:
     return request.app.state.database
+
+
+def get_runtime_settings(request: Request) -> Settings:
+    return request.app.state.settings
 
 
 def get_session(request: Request) -> Iterator[Session]:

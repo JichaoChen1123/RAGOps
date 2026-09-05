@@ -4,7 +4,9 @@ from dataclasses import dataclass, field
 from typing import Any, Literal
 
 
-MetricStatus = Literal["ok", "not_applicable", "error"]
+MetricStatus = Literal[
+    "ok", "not_evaluated", "not_applicable", "unknown", "error", "legacy"
+]
 DiagnosisStatus = Literal["confirmed", "suspected", "not_determinable"]
 
 
@@ -66,6 +68,8 @@ class RankedItem:
     relevance_grade: int
     rank_before: int | None = None
     usefulness: bool | None = None
+    origin: str = "legacy_unknown"
+    retrieval_run_id: str | None = None
 
     @property
     def relevant(self) -> bool:
@@ -77,7 +81,7 @@ class CitationJudgement:
     citation_id: str
     chunk_id: str
     resolves: bool
-    supports_claim: bool
+    supports_claim: bool | None
 
 
 @dataclass(frozen=True)
@@ -89,5 +93,8 @@ class EvaluationFeatures:
     gold_ids: frozenset[str]
     relevance_unit: str | None
     ranked_items: tuple[RankedItem, ...]
+    retrieval_items: tuple[RankedItem, ...]
+    retrieval_metric_status: Literal["ok", "not_evaluated", "unknown"]
+    context_origin: str
     relevance_available: bool
     citations: tuple[CitationJudgement, ...]
