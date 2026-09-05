@@ -1,0 +1,113 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>RAGOps 离线浏览器 API 闭环</title>
+    <style>
+      body { font-family: system-ui, sans-serif; max-width: 960px; margin: 2rem auto; padding: 0 1rem; }
+      label, button { display: block; margin: 0.75rem 0; }
+      input { width: min(100%, 36rem); padding: 0.5rem; }
+      pre { padding: 1rem; background: #111827; color: #e5e7eb; overflow: auto; white-space: pre-wrap; }
+      .passed { color: #047857; }
+      .failed { color: #b91c1c; }
+    </style>
+  </head>
+  <body>
+    <h1>RAGOps 离线浏览器 API 闭环</h1>
+    <p>此页面只创建人工样本并请求后端 <code>mock</code> 适配器。它不读取真实凭据。</p>
+    <label>
+      后端地址
+      <input id="base-url" value="http://127.0.0.1:8000" />
+    </label>
+    <button id="run" type="button">执行创建、导入、发布、运行、报告和导出</button>
+    <p id="status">尚未执行</p>
+    <pre id="output"></pre>
+    <script>
+      const statusNode = document.querySelector("#status");
+      const outputNode = document.querySelector("#output");
+
+      function requireValue(condition, message) {
+        if (!condition) throw new Error(message);
+      }
+
+      async function jsonRequest(baseUrl, path, options = {}) {
+        const response = await fetch(`${baseUrl}${path}`, {
+          ...options,
+          headers: { "Content-Type": "application/json", ...(options.headers || {}) },
+        });
+        const payload = await response.json();
+        if (!response.ok) throw new Error(`${response.status} ${JSON.stringify(payload)}`);
+        return payload;
+      }
+
+      document.querySelector("#run").addEventListener("click", async () => {
+        statusNode.textContent = "执行中";
+        statusNode.className = "";
+        outputNode.textContent = "";
+        const baseUrl = document.querySelector("#base-url").value.replace(/\/$/, "");
+        try {
+          const execution = await jsonRequest(baseUrl, "/api/v1/model-execution/status");
+          requireValue(execution.backend_execution_adapter === "mock", "后端不是 mock 适配器");
+          requireValue(execution.external_calls_enabled === false, "外部模型调用未关闭");
+          const dataset = await jsonRequest(baseUrl, "/api/v1/datasets", {
+            method: "POST",
+            body: JSON.stringify({
+              name: `browser-offline-${crypto.randomUUID()}`,
+              owner: "qa",
+              version: "v2",
+              schema_version: "2.0",
+            }),
+          });
+          await jsonRequest(baseUrl, `/api/v1/datasets/${dataset.id}/samples:import`, {
+            method: "POST",
+            body: JSON.stringify({ samples: [{
+              schema_version: "2.0",
+              sample_id: "browser-sample-001",
+              question: "浏览器离线闭环是否使用真实模型？",
+              labels: { reference_answer: "不会。", gold_document_ids: [], gold_evidence_ids: [], expected_diagnoses: [] },
+              contexts: [{ origin: "provided", rank: 1, rank_before: null, retrieval_run_id: null, doc_id: "doc-browser", chunk_id: "chunk-browser", evidence_ids: [], text: "浏览器离线闭环只使用 mock。", score: null, relevance_grade: 3, usefulness: true }],
+              historical_output: null,
+              tags: ["synthetic"],
+              metadata: {},
+            }] }),
+          });
+          await jsonRequest(baseUrl, `/api/v1/datasets/${dataset.id}:publish`, { method: "POST" });
+          const job = await jsonRequest(baseUrl, "/api/v1/evaluation-jobs", {
+            method: "POST",
+            headers: { "Idempotency-Key": `browser-${crypto.randomUUID()}` },
+            body: JSON.stringify({
+              schema_version: "2.0",
+              dataset_id: dataset.id,
+              execution: {
+                adapter_id: "mock",
+                prompt: { version: "browser-v1", text: "仅依据上下文回答。" },
+                generation: { model: "mock-ragops-v1", temperature: 0, top_p: 1, max_output_tokens: 256, stop: [], seed: null },
+                context_policy: "dataset_contexts",
+              },
+              metrics: [],
+              quality_gate: null,
+            }),
+          });
+          const completed = await jsonRequest(baseUrl, `/api/v1/evaluation-jobs/${job.id}`);
+          const samples = await jsonRequest(baseUrl, `/api/v1/evaluation-jobs/${job.id}/samples`);
+          const report = await jsonRequest(baseUrl, `/api/v1/evaluation-jobs/${job.id}/report`);
+          const exported = await jsonRequest(baseUrl, `/api/v1/evaluation-jobs/${job.id}/report/export`);
+          requireValue(completed.outcome === "succeeded", "执行未成功");
+          requireValue(completed.quality_status === "not_evaluated", "质量状态被误判");
+          requireValue(completed.quality_verdict === "unknown", "质量结论被误判");
+          requireValue(completed.quality_score === null, "未知分数不是 null");
+          requireValue(samples.items[0].run.is_mock === true, "运行未标记为 mock");
+          requireValue(exported.samples.length === 1, "导出缺少完整样本");
+          statusNode.textContent = "通过";
+          statusNode.className = "passed";
+          outputNode.textContent = JSON.stringify({ execution, completed, samples, report, exported }, null, 2);
+        } catch (error) {
+          statusNode.textContent = "失败";
+          statusNode.className = "failed";
+          outputNode.textContent = String(error instanceof Error ? error.stack : error);
+        }
+      });
+    </script>
+  </body>
+</html>

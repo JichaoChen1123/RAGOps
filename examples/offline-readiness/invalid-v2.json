@@ -1,0 +1,142 @@
+{
+  "cases": [
+    {
+      "case_id": "schema-null",
+      "input": {
+        "schema_version": null,
+        "sample_id": "invalid-schema-null",
+        "question": "schema_version 为 null",
+        "labels": {"reference_answer": null, "gold_document_ids": [], "gold_evidence_ids": [], "expected_diagnoses": []},
+        "contexts": [],
+        "historical_output": null,
+        "tags": [],
+        "metadata": {}
+      },
+      "expected": {"http": 422, "code": "VALIDATION_ERROR", "field": "schema_version"}
+    },
+    {
+      "case_id": "schema-blank",
+      "input": {
+        "schema_version": " ",
+        "sample_id": "invalid-schema-blank",
+        "question": "schema_version 为空白",
+        "labels": {"reference_answer": null, "gold_document_ids": [], "gold_evidence_ids": [], "expected_diagnoses": []},
+        "contexts": [],
+        "historical_output": null,
+        "tags": [],
+        "metadata": {}
+      },
+      "expected": {"http": 422, "code": "VALIDATION_ERROR", "field": "schema_version"}
+    },
+    {
+      "case_id": "schema-unknown",
+      "input": {
+        "schema_version": "9.9",
+        "sample_id": "invalid-schema-unknown",
+        "question": "未知版本",
+        "labels": {"reference_answer": null, "gold_document_ids": [], "gold_evidence_ids": [], "expected_diagnoses": []},
+        "contexts": [],
+        "historical_output": null,
+        "tags": [],
+        "metadata": {}
+      },
+      "expected": {"http": 422, "code": "UNSUPPORTED_SCHEMA_VERSION", "field": "schema_version"}
+    },
+    {
+      "case_id": "question-blank",
+      "input": {
+        "schema_version": "2.0",
+        "sample_id": "invalid-question-blank",
+        "question": "   ",
+        "labels": {"reference_answer": null, "gold_document_ids": [], "gold_evidence_ids": [], "expected_diagnoses": []},
+        "contexts": [],
+        "historical_output": null,
+        "tags": [],
+        "metadata": {}
+      },
+      "expected": {"http": 422, "code": "VALIDATION_ERROR", "field": "question"}
+    },
+    {
+      "case_id": "sample-id-null",
+      "input": {
+        "schema_version": "2.0",
+        "sample_id": null,
+        "question": "sample_id 为 null",
+        "labels": {"reference_answer": null, "gold_document_ids": [], "gold_evidence_ids": [], "expected_diagnoses": []},
+        "contexts": [],
+        "historical_output": null,
+        "tags": [],
+        "metadata": {}
+      },
+      "expected": {"http": 422, "code": "VALIDATION_ERROR", "field": "sample_id"}
+    },
+    {
+      "case_id": "mixed-v1-v2-fields",
+      "input": {
+        "schema_version": "2.0",
+        "sample_id": "invalid-mixed-fields",
+        "question": "新旧字段不能混用",
+        "reference_answer": "旧字段",
+        "labels": {"reference_answer": "新字段", "gold_document_ids": [], "gold_evidence_ids": [], "expected_diagnoses": []},
+        "contexts": [],
+        "historical_output": null,
+        "tags": [],
+        "metadata": {}
+      },
+      "expected": {"http": 422, "code": "AMBIGUOUS_SCHEMA_FIELDS", "field": "reference_answer"}
+    },
+    {
+      "case_id": "provided-has-retrieval-run",
+      "input": {
+        "schema_version": "2.0",
+        "sample_id": "invalid-provided-run",
+        "question": "给定上下文不能带检索运行 ID",
+        "labels": {"reference_answer": null, "gold_document_ids": [], "gold_evidence_ids": [], "expected_diagnoses": []},
+        "contexts": [{"origin": "provided", "rank": 1, "rank_before": null, "retrieval_run_id": "retrieval-should-be-null", "doc_id": "doc-1", "chunk_id": "chunk-1", "evidence_ids": [], "text": "context", "score": null, "relevance_grade": null, "usefulness": null}],
+        "historical_output": null,
+        "tags": [],
+        "metadata": {}
+      },
+      "expected": {"http": 422, "code": "VALIDATION_ERROR", "field": "contexts.0.retrieval_run_id"}
+    },
+    {
+      "case_id": "retrieved-missing-retrieval-run",
+      "input": {
+        "schema_version": "2.0",
+        "sample_id": "invalid-retrieved-run",
+        "question": "检索上下文必须带本次检索运行 ID",
+        "labels": {"reference_answer": null, "gold_document_ids": [], "gold_evidence_ids": [], "expected_diagnoses": []},
+        "contexts": [{"origin": "retrieved", "rank": 1, "rank_before": null, "retrieval_run_id": null, "doc_id": "doc-1", "chunk_id": "chunk-1", "evidence_ids": [], "text": "context", "score": 0.8, "relevance_grade": null, "usefulness": null}],
+        "historical_output": null,
+        "tags": [],
+        "metadata": {}
+      },
+      "expected": {"http": 422, "code": "VALIDATION_ERROR", "field": "contexts.0.retrieval_run_id"}
+    },
+    {
+      "case_id": "duplicate-rank",
+      "input": {
+        "schema_version": "2.0",
+        "sample_id": "invalid-duplicate-rank",
+        "question": "rank 必须唯一",
+        "labels": {"reference_answer": null, "gold_document_ids": [], "gold_evidence_ids": [], "expected_diagnoses": []},
+        "contexts": [
+          {"origin": "provided", "rank": 1, "rank_before": null, "retrieval_run_id": null, "doc_id": "doc-1", "chunk_id": "chunk-1", "evidence_ids": [], "text": "one", "score": null, "relevance_grade": null, "usefulness": null},
+          {"origin": "provided", "rank": 1, "rank_before": null, "retrieval_run_id": null, "doc_id": "doc-2", "chunk_id": "chunk-2", "evidence_ids": [], "text": "two", "score": null, "relevance_grade": null, "usefulness": null}
+        ],
+        "historical_output": null,
+        "tags": [],
+        "metadata": {}
+      },
+      "expected": {"http": 422, "code": "VALIDATION_ERROR", "field": "contexts"}
+    }
+  ],
+  "batch_duplicate": {
+    "sample_id": "duplicate-in-batch",
+    "expected": {"http": 422, "code": "VALIDATION_ERROR", "field": "sample_id"}
+  },
+  "database_duplicate": {
+    "sample_id": "offline-sentinel-001",
+    "expected": {"http": 409, "code": "DUPLICATE_SAMPLE_ID", "field": "sample_id"}
+  }
+}
