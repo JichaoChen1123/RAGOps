@@ -1,6 +1,6 @@
 # RAGOps 离线接入基础建设阶段
 
-状态：公共接口已在 [`model-execution-contract.md`](model-execution-contract.md) 冻结；业务实现与离线验收尚未完成。
+状态：公共接口已在 [`model-execution-contract.md`](model-execution-contract.md) 冻结；业务实现、D01 修复、独立离线复测与负责人复核已完成，阶段提交用户验收。Docker 容器/卷重启未执行，真实连接按范围未执行；证据归属与交付表见 [最终复核](../qa/offline-readiness-final-review.md)。
 
 Multica 总任务：`WOR-61`。阶段集成分支：`work/wor-61-offline-readiness`，最终 PR 目标为 `main`，本阶段交付可审核 PR，不自动合并 main。
 
@@ -45,6 +45,8 @@ Multica 总任务：`WOR-61`。阶段集成分支：`work/wor-61-offline-readine
 | 2 前端 WOR-64 | RAGOps 前端可视化工程师 | frontend、对应单测 | 阶段 1 契约提交 | 三层模式状态清晰；导入/模拟执行/报告闭环；不生成伪质量分 |
 | 2 测试准备 WOR-65 | RAGOps 测试质量工程师 | 新增独立离线契约测试、少量人工样本、QA 矩阵 | 阶段 1 契约提交 | 测试可运行、无模型网络访问；失败如实记录，不改变生产代码掩盖问题 |
 | 3 集成验收 WOR-66 | RAGOps 测试质量工程师，负责人集成复核 | 集成测试、README/启动教程、验收报告 | 阶段 2 全部成果由负责人集成进阶段分支 | 全流程测试、持久化、浏览器 API 模式验证；Docker 实测或明确未验证及 PowerShell 复现命令 |
+| 4 D01 修复 WOR-67 | RAGOps 前端可视化工程师 | 两个诊断 mapper、只读诊断列表 key、两项回归 | WOR-66 原始失败证据 | 修复已集成，前端 43 项通过，交 WOR-68 独立复测 |
+| 5 D01 独立复测 WOR-68 | RAGOps 测试质量工程师，负责人集成复核 | 浏览器验收脚本、三阶段 JSON、5 张新截图和使用文档 | 修复与原 QA 资产共同集成至 `1698150b...` | 三阶段均退出 0；PR #27 已合入阶段分支，最终复核通过 |
 
 负责人负责推进依赖、审核分工成果、在阶段分支集成和返工、最终 PR 与状态汇总。已有其他成员本阶段不自动增派，避免职责重叠。
 

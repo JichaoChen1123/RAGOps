@@ -40,6 +40,8 @@ RAGOps 是一个面向 RAG 系统的质量控制台。它把评测数据集、�
 
 > 集成验收状态：D01 诊断 `rule_id`/React key 修复已在 `1698150bf8a63dfd534b4c10a2fc64287cbcf993` 完成独立复测；本地 API/SQLite 重启及浏览器 create/restart/disconnected 通过。Docker 容器和真实模型连接仍未在本机验证，详见 [离线基础集成验收记录](docs/qa/offline-readiness-acceptance.md)。
 
+> 负责人已完成 [阶段最终复核](docs/qa/offline-readiness-final-review.md)，复测 PR #27 已集成到阶段分支；总 PR #21 提交用户验收。
+
 ## 目录
 
 - [项目背景](#项目背景)
