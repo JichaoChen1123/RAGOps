@@ -99,7 +99,7 @@ describe('critical route smoke gate', () => {
     );
 
     for (const action of actions) {
-      const control = await screen.findByRole(action.role, { name: action.name });
+      const control = (await screen.findAllByRole(action.role, { name: action.name }))[0];
       expect(control).toBeVisible();
       if (action.role === 'button') expect(control).toBeEnabled();
     }

@@ -1,10 +1,10 @@
 import { ArrowDownRight, ArrowUpRight, CircleDashed } from 'lucide-react';
-import { formatMetric } from '../lib/format';
+import { formatMetric, formatUnknownStatus } from '../lib/format';
 import type { MetricValue } from '../types';
 
 export function MetricCard({ metric, compact = false }: { metric: MetricValue; compact?: boolean }) {
   const isUnavailable = metric.value === null;
-  const reachedThreshold = metric.value !== null && metric.threshold !== undefined
+  const reachedThreshold = typeof metric.value === 'number' && metric.status === 'ok' && metric.threshold !== undefined
     ? metric.direction === 'lower'
       ? metric.value <= metric.threshold
       : metric.value >= metric.threshold
@@ -22,7 +22,7 @@ export function MetricCard({ metric, compact = false }: { metric: MetricValue; c
       </div>
       <div className="metric-value">
         {isUnavailable && <CircleDashed size={18} />}
-        {formatMetric(metric.value, metric.unit)}
+        {formatMetric(metric.value, metric.unit, metric.status)}
       </div>
       <div className="metric-meta">
         {metric.delta !== undefined && metric.delta !== null ? (
@@ -30,8 +30,10 @@ export function MetricCard({ metric, compact = false }: { metric: MetricValue; c
             {metric.delta >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
             {Math.abs(metric.delta).toFixed(1)}% 较上次
           </span>
+        ) : isUnavailable ? (
+          <span>{formatUnknownStatus(metric.status)}</span>
         ) : metric.threshold !== undefined ? (
-          <span>门槛 {formatMetric(metric.threshold, metric.unit)}</span>
+          <span>门槛 {formatMetric(metric.threshold, metric.unit, 'ok')}</span>
         ) : (
           <span>暂无基线</span>
         )}
