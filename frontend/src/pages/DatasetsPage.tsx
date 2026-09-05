@@ -10,7 +10,7 @@ import type { WorkspaceOutletContext } from '../components/WorkspaceShell';
 import { useApiResource } from '../hooks/useApiResource';
 import { copyText } from '../lib/browser';
 import { formatDateTime } from '../lib/format';
-import type { Dataset, DatasetStatus } from '../types';
+import type { Dataset, DatasetSampleInput, DatasetStatus } from '../types';
 
 type DisplayDataset = Dataset & { mockOnly?: boolean; archived?: boolean };
 type DatasetDialog = 'import' | 'create' | 'details' | null;
@@ -23,6 +23,37 @@ const statusOptions: { value: DatasetFilter; label: string }[] = [
   { value: 'draft', label: '草稿' },
   { value: 'failed', label: '失败' },
 ];
+
+const exampleSamples: DatasetSampleInput[] = Array.from({ length: 12 }, (_, index) => {
+  const suffix = String(index + 1).padStart(2, '0');
+  const docId = `doc-refund-policy-${suffix}`;
+  const chunkId = `chunk-refund-policy-${suffix}`;
+  return {
+    sampleId: `refund-example-${suffix}`,
+    question: index === 0 ? '退款后成长值如何处理？' : `退款政策示例问题 ${index + 1}`,
+    labels: {
+      referenceAnswer: index === 0 ? '按退款金额比例扣回。' : `人工构造参考答案 ${index + 1}`,
+      goldDocumentIds: [docId],
+      goldEvidenceIds: [`evidence-refund-${suffix}`],
+      expectedDiagnoses: [],
+    },
+    contexts: [{
+      origin: 'provided',
+      rank: 1,
+      retrievalRunId: null,
+      docId,
+      chunkId,
+      evidenceIds: [`evidence-refund-${suffix}`],
+      text: index === 0 ? '退款成功后，成长值按退款商品实付金额比例扣回。' : `人工构造退款政策片段 ${index + 1}`,
+      score: null,
+      relevanceGrade: 3,
+      usefulness: true,
+    }],
+    historicalOutput: null,
+    tags: ['synthetic', 'refund'],
+    metadata: { fixture_version: 'offline-example-v2' },
+  };
+});
 
 export function DatasetsPage() {
   const { projectId = 'demo' } = useParams();
@@ -38,6 +69,7 @@ export function DatasetsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [publishingId, setPublishingId] = useState<string | null>(null);
   const [draft, setDraft] = useState({ name: '', description: '', owner: '当前用户' });
   const { state, retry } = useApiResource(
     () => apiClient.listDatasets(projectId),
@@ -83,29 +115,44 @@ export function DatasetsPage() {
   const importExample = async () => {
     setSaving(true);
     try {
-      const imported = await apiClient.createDataset(projectId, {
+      const created = await apiClient.createDataset(projectId, {
         name: '退款政策示例 JSONL',
         description: apiMode === 'mock'
           ? '[Mock 导入] 12 条退款政策问答样本，仅保存在当前页面会话。'
           : '通过 RAGOps 示例导入创建的 12 条退款政策问答草稿。',
         owner: '当前用户',
         version: 'v0.1',
-        samples: Array.from({ length: 12 }, (_, index) => ({
-          sampleId: `refund-example-${String(index + 1).padStart(2, '0')}`,
-          question: index === 0 ? '退款后成长值如何处理？' : `退款政策示例问题 ${index + 1}`,
-          referenceAnswer: index === 0 ? '按退款金额比例扣回。' : `退款政策示例答案 ${index + 1}`,
-          tags: ['refund', 'example'],
-        })),
       });
-      setLocalDatasets((current) => [{ ...imported, mockOnly: apiMode === 'mock' }, ...(current ?? [])]);
+      const imported = await apiClient.importDatasetSamples(projectId, created.id, exampleSamples);
+      const published = await apiClient.publishDataset(projectId, imported.dataset.id);
+      setLocalDatasets((current) => [{ ...published, mockOnly: apiMode === 'mock' }, ...(current ?? [])]);
       setDialog(null);
       setFeedback(apiMode === 'mock'
-        ? 'Mock 示例 JSONL 导入完成，已新增 12 条样本'
-        : '示例数据集已写入 API；当前保持草稿状态，可由后端发布后用于评测');
+        ? 'Mock 示例已完成创建、导入 12 条 2.0 样本并发布（仅当前会话）'
+        : '示例数据集已通过 API 创建、导入 12 条 2.0 样本并发布');
     } catch (error) {
       setFeedback(error instanceof Error ? `导入失败：${error.message}` : '导入失败，请稍后重试');
     } finally {
       setSaving(false);
+    }
+  };
+
+  const publishDataset = async (dataset: DisplayDataset) => {
+    if (dataset.sampleCount === 0 || publishingId) return;
+    setPublishingId(dataset.id);
+    try {
+      const published = await apiClient.publishDataset(projectId, dataset.id);
+      setLocalDatasets((current) => (current ?? datasets).map((item) => item.id === dataset.id
+        ? { ...published, mockOnly: item.mockOnly }
+        : item));
+      setDialog(null);
+      setFeedback(apiMode === 'mock'
+        ? `Mock 数据集“${dataset.name}”已发布（仅当前会话）`
+        : `数据集“${dataset.name}”已通过 API 发布并冻结`);
+    } catch (error) {
+      setFeedback(error instanceof Error ? `发布失败：${error.message}` : '发布失败，请稍后重试');
+    } finally {
+      setPublishingId(null);
     }
   };
 
@@ -197,7 +244,7 @@ export function DatasetsPage() {
                   <td><StatusBadge value={dataset.status} /></td>
                   <td><code>{dataset.version}</code></td>
                   <td>{dataset.sampleCount}</td>
-                  <td><div className="coverage"><span><i style={{ width: `${dataset.coverage}%` }} /></span><strong>{dataset.coverage}%</strong></div></td>
+                  <td>{dataset.coverage === null ? <span className="unknown-value">未知</span> : <div className="coverage"><span><i style={{ width: `${dataset.coverage}%` }} /></span><strong>{dataset.coverage}%</strong></div>}</td>
                   <td>{dataset.owner}</td>
                   <td>{formatDateTime(dataset.updatedAt)}</td>
                   <td>
@@ -220,9 +267,9 @@ export function DatasetsPage() {
         onClose={() => setDialog(null)}
         footer={<><button className="button button-secondary" type="button" onClick={() => setDialog(null)}>取消</button><button className="button button-primary" type="button" onClick={() => void importExample()} disabled={saving}><Upload size={15} />导入示例 JSONL</button></>}
       >
-        <p>演示文件包含 12 条退款政策问答。每行需要包含 <code>question</code>、<code>expected_answer</code> 与可选的 <code>metadata</code>。</p>
-        <pre className="jsonl-preview">{`{"question":"退款后成长值如何处理？","expected_answer":"按退款金额比例扣回","metadata":{"scene":"refund"}}`}</pre>
-        <p className="form-hint">{apiMode === 'mock' ? '导入结果会明确标记为 MOCK，并只保存在当前页面会话。' : '将调用 POST /datasets，使用示例样本创建一个可继续发布的草稿。'}</p>
+        <p>演示文件包含 12 条人工构造样本，使用 2.0 契约分开问题、参考标签、给定上下文和历史输出。</p>
+        <pre className="jsonl-preview">{`{"schema_version":"2.0","sample_id":"refund-example-01","question":"退款后成长值如何处理？","labels":{"reference_answer":"按退款金额比例扣回。","gold_document_ids":["doc-refund-policy-01"]},"contexts":[{"origin":"provided","rank":1,"retrieval_run_id":null,"doc_id":"doc-refund-policy-01","chunk_id":"chunk-refund-policy-01","text":"退款成功后，成长值按退款商品实付金额比例扣回。","score":null}]}`}</pre>
+        <p className="form-hint">{apiMode === 'mock' ? '将在内存中依次创建、导入和发布，并明确标记为 MOCK。' : '将依次调用创建、样本导入和发布接口；任一步失败都会显示后端错误，不会改用 fixture。'}</p>
       </Dialog>
 
       <Dialog
@@ -240,8 +287,14 @@ export function DatasetsPage() {
         <p className="form-hint">{apiMode === 'mock' ? '将创建一个样本量为 0 的 Mock 草稿，不会写入真实服务。' : '将调用 POST /datasets 创建服务端草稿；发布仍由后端发布接口完成。'}</p>
       </Dialog>
 
-      <Dialog open={dialog === 'details' && Boolean(selectedDataset)} title={selectedDataset?.name ?? '数据集详情'} eyebrow="DATASET DETAIL" onClose={() => setDialog(null)}>
-        {selectedDataset && <dl className="detail-list"><div><dt>ID</dt><dd><code>{selectedDataset.id}</code></dd></div><div><dt>状态</dt><dd><StatusBadge value={selectedDataset.status} /> {selectedDataset.archived && <span className="archive-label">已归档</span>}</dd></div><div><dt>样本 / 覆盖</dt><dd>{selectedDataset.sampleCount} 条 · {selectedDataset.coverage}%</dd></div><div><dt>版本</dt><dd>{selectedDataset.version}</dd></div><div><dt>负责人</dt><dd>{selectedDataset.owner}</dd></div><div><dt>更新时间</dt><dd>{formatDateTime(selectedDataset.updatedAt)}</dd></div></dl>}
+      <Dialog
+        open={dialog === 'details' && Boolean(selectedDataset)}
+        title={selectedDataset?.name ?? '数据集详情'}
+        eyebrow="DATASET DETAIL"
+        onClose={() => setDialog(null)}
+        footer={selectedDataset?.status === 'draft' ? <button className="button button-primary" type="button" disabled={selectedDataset.sampleCount === 0 || publishingId === selectedDataset.id} onClick={() => void publishDataset(selectedDataset)}>{publishingId === selectedDataset.id ? '发布中' : '发布并冻结数据集'}</button> : undefined}
+      >
+        {selectedDataset && <><dl className="detail-list"><div><dt>ID</dt><dd><code>{selectedDataset.id}</code></dd></div><div><dt>状态</dt><dd><StatusBadge value={selectedDataset.status} /> {selectedDataset.archived && <span className="archive-label">已归档</span>}</dd></div><div><dt>样本 / 覆盖</dt><dd>{selectedDataset.sampleCount} 条 · {selectedDataset.coverage === null ? '覆盖未知' : `${selectedDataset.coverage}%`}</dd></div><div><dt>Schema / 版本</dt><dd><code>{selectedDataset.schemaVersion}</code> · {selectedDataset.version}</dd></div><div><dt>内容哈希</dt><dd>{selectedDataset.contentSha256 ? <code>{selectedDataset.contentSha256}</code> : '发布前未知'}</dd></div><div><dt>负责人</dt><dd>{selectedDataset.owner}</dd></div><div><dt>更新时间</dt><dd>{formatDateTime(selectedDataset.updatedAt)}</dd></div></dl>{selectedDataset.status === 'draft' && selectedDataset.sampleCount === 0 && <p className="form-hint">发布前至少需要一条有效样本；空草稿不会发送发布请求。</p>}</>}
       </Dialog>
       <Toast message={feedback} onDismiss={() => setFeedback(null)} />
     </>

@@ -32,11 +32,11 @@ describe('RAGOps MVP interaction loops', () => {
 
     await user.click(await screen.findByRole('button', { name: /导入首个数据集/ }));
     const dialog = screen.getByRole('dialog', { name: '导入示例 JSONL' });
-    expect(within(dialog).getByText(/12 条退款政策问答/)).toBeInTheDocument();
+    expect(within(dialog).getByText(/12 条人工构造样本/)).toBeInTheDocument();
     await user.click(within(dialog).getByRole('button', { name: /^导入示例 JSONL$/ }));
 
     expect(await screen.findByText('退款政策示例 JSONL')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('Mock 示例 JSONL 导入完成');
+    expect(screen.getByRole('status')).toHaveTextContent('创建、导入 12 条 2.0 样本并发布');
   });
 
   it('creates, filters and archives a local dataset', async () => {
@@ -73,7 +73,7 @@ describe('RAGOps MVP interaction loops', () => {
     await user.click(screen.getByRole('menuitem', { name: '查看详情' }));
     const details = screen.getByRole('dialog', { name: '账单边界样本' });
     expect(within(details).getByText('ds-billing-edge')).toBeInTheDocument();
-    expect(within(details).getByText(/64 条/)).toBeInTheDocument();
+    expect(within(details).getByText(/2 条/)).toBeInTheDocument();
     await user.click(screen.getByRole('button', { name: '关闭账单边界样本' }));
 
     await user.click(screen.getByRole('button', { name: '账单边界样本 更多操作' }));
@@ -117,15 +117,18 @@ describe('RAGOps MVP interaction loops', () => {
     expect(listSpy).toHaveBeenCalledTimes(2);
   });
 
-  it('creates a running mock evaluation and filters by status', async () => {
+  it('creates a queued mock evaluation without inventing a quality score', async () => {
     const user = userEvent.setup();
     renderRoute('/projects/demo/evaluations?state=empty');
 
     await user.click(await screen.findByRole('button', { name: /新建首个任务/ }));
-    await user.selectOptions(screen.getByRole('combobox', { name: '选择任务状态' }), 'running');
-    await user.click(screen.getByRole('button', { name: /生成 Mock 任务/ }));
-    expect(await screen.findByText(/Mock 评测/)).toBeInTheDocument();
-    expect(screen.getByText('运行中')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '创建评测任务' }));
+    const created = await screen.findByText(/模拟评测/);
+    const row = created.closest('tr');
+    expect(row).not.toBeNull();
+    expect(within(row!).getByText('排队中')).toBeInTheDocument();
+    expect(within(row!).getByText('未评估')).toBeInTheDocument();
+    expect(within(row!).getAllByText('未知').length).toBeGreaterThan(0);
 
     await user.click(screen.getByRole('button', { name: '筛选' }));
     await user.selectOptions(screen.getByRole('combobox', { name: '按状态筛选评测任务' }), 'completed');
@@ -143,7 +146,7 @@ describe('RAGOps MVP interaction loops', () => {
     await user.click(screen.getByRole('link', { name: /查看报告/ }));
 
     expect(await screen.findByRole('heading', { level: 2, name: '客服知识库 v3 回归评测' })).toBeInTheDocument();
-    expect(screen.getByText('发布门禁结论')).toBeInTheDocument();
+    expect(screen.getByText('质量门结论')).toBeInTheDocument();
   });
 
   it('refreshes task status while preserving the table and retries a failed read', async () => {
@@ -153,7 +156,7 @@ describe('RAGOps MVP interaction loops', () => {
 
     const failedRefresh = deferred<EvaluationTask[]>();
     const refreshedTasks: EvaluationTask[] = evaluationTasks.map((task) => task.id === 'eval-20260825'
-      ? { ...task, status: 'completed', progress: 100, completedAt: '2026-08-27T13:00:00+08:00', score: 90.2 }
+      ? { ...task, status: 'completed', outcome: 'succeeded', progress: 100, completedAt: '2026-08-27T13:00:00+08:00', qualityStatus: 'evaluated', qualityVerdict: 'passed', qualityScore: 90.2 }
       : task);
     const listSpy = vi.spyOn(apiClient, 'listEvaluationTasks')
       .mockReturnValueOnce(failedRefresh.promise)
@@ -208,18 +211,18 @@ describe('RAGOps MVP interaction loops', () => {
   it('filters report samples, compares versions and exports JSON', async () => {
     const user = userEvent.setup();
     renderRoute('/projects/demo/evaluations/eval-20260826/report');
-    await screen.findByText('发布门禁结论');
+    await screen.findByText('质量门结论');
 
     await user.click(screen.getByRole('button', { name: '已确认 1' }));
-    expect(screen.getByText('sample-017')).toBeInTheDocument();
-    expect(screen.queryByText('sample-042')).not.toBeInTheDocument();
+    expect(screen.getByText(/sample-017/)).toBeInTheDocument();
+    expect(screen.queryByText(/sample-042/)).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /对比版本/ }));
     expect(screen.getByRole('dialog', { name: '版本对比' })).toHaveTextContent('CURRENT VS BASELINE');
     await user.click(screen.getByRole('button', { name: '关闭版本对比' }));
     await user.click(screen.getByRole('button', { name: /导出报告/ }));
     await user.click(within(screen.getByRole('dialog', { name: '导出评测报告' })).getByRole('button', { name: /JSON/ }));
-    expect(await screen.findByText('已导出 JSON 报告')).toBeInTheDocument();
+    expect(await screen.findByText(/已导出 JSON 报告/)).toBeInTheDocument();
     expect(URL.createObjectURL).toHaveBeenCalled();
   });
 
@@ -231,10 +234,10 @@ describe('RAGOps MVP interaction loops', () => {
 
     await user.click(screen.getByRole('button', { name: '复制模型回答' }));
     expect(writeText).toHaveBeenCalled();
-    expect(await screen.findByText('已复制模型回答')).toBeInTheDocument();
+    expect(await screen.findByText('已复制本次回答')).toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: /打开源文档/ }));
-    expect(screen.getByRole('dialog', { name: /会员成长值常见问题/ })).toHaveTextContent('kb://membership/archive/faq-2024');
+    expect(screen.getByRole('dialog', { name: /会员成长值常见问题/ })).toHaveTextContent('fixture://membership/archive/faq-2024');
     await user.click(screen.getByRole('button', { name: /关闭会员成长值常见问题/ }));
     await user.click(screen.getByRole('button', { name: /确认故障归因/ }));
     expect(await screen.findByText('故障归因已在当前页面确认')).toBeInTheDocument();
@@ -251,7 +254,7 @@ describe('RAGOps MVP interaction loops', () => {
     expect(Element.prototype.scrollIntoView).toHaveBeenCalled();
 
     await user.click(screen.getByRole('button', { name: '排除诊断' }));
-    expect(await screen.findByRole('status')).toHaveTextContent('已排除本次诊断（仅当前页面会话）');
+    expect(await screen.findByText('已排除本次诊断（仅当前页面会话）')).toBeInTheDocument();
     expect(screen.getByRole('button', { name: '排除诊断' })).toBeDisabled();
     expect(screen.getByRole('button', { name: '排除诊断' })).toHaveAttribute('aria-pressed', 'true');
   });

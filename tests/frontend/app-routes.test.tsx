@@ -18,7 +18,7 @@ describe('RAGOps MVP routes', () => {
     renderRoute('/projects/demo/evaluations');
 
     expect(await screen.findByRole('heading', { level: 2, name: '评测任务' })).toBeInTheDocument();
-    await user.click(await screen.findByRole('link', { name: /查看报告/ }));
+    await user.click((await screen.findAllByRole('link', { name: /查看报告/ }))[0]);
 
     expect(await screen.findByRole('heading', { level: 2, name: '客服知识库 v3 回归评测' })).toBeInTheDocument();
     await user.click(screen.getByRole('link', { name: '诊断样本 sample-042' }));
@@ -48,11 +48,11 @@ describe('RAGOps MVP routes', () => {
   it('switches to partial data and preserves an undetermined gate', async () => {
     const user = userEvent.setup();
     renderRoute('/projects/demo/evaluations/eval-20260826/report');
-    expect(await screen.findByText('发布门禁结论')).toBeInTheDocument();
+    expect(await screen.findByText('质量门结论')).toBeInTheDocument();
 
     await user.selectOptions(screen.getByRole('combobox', { name: '数据场景' }), 'partial');
-    expect(await screen.findByText(/部分指标仍在计算/)).toBeInTheDocument();
-    expect(screen.getByRole('heading', { level: 3, name: '无法判断' })).toBeInTheDocument();
-    expect(screen.getByText('不可计算')).toBeInTheDocument();
+    expect((await screen.findAllByText(/部分指标仍在计算/)).length).toBeGreaterThan(0);
+    expect(screen.getByRole('heading', { level: 3, name: '未知' })).toBeInTheDocument();
+    expect(screen.getAllByText('未评估').length).toBeGreaterThan(0);
   });
 });
