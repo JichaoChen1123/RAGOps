@@ -8,6 +8,10 @@ The local default is SQLite plus the provider-neutral `mock` adapter. Model netw
 
 For full repository setup, Docker startup, environment variables, frontend usage, and troubleshooting, see [`../docs/quickstart.md`](../docs/quickstart.md).
 
+The optional ChatGPT-authenticated Codex channel uses a separate Windows-hosted bridge. It is
+disabled by default and has its own runbook and security boundary in
+[`../docs/deployment/codex-chatgpt-bridge-windows.md`](../docs/deployment/codex-chatgpt-bridge-windows.md).
+
 ## Requirements
 
 - Python 3.11 or newer (the target production baseline is Python 3.12)

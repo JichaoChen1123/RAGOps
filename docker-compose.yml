@@ -21,7 +21,11 @@ services:
       RAGOPS_OPENAI_COMPAT_AUTH_MODE: ${RAGOPS_OPENAI_COMPAT_AUTH_MODE:-bearer}
       RAGOPS_OPENAI_COMPAT_API_KEY: ${RAGOPS_OPENAI_COMPAT_API_KEY:-}
       RAGOPS_OPENAI_COMPAT_DEFAULT_MODEL: ${RAGOPS_OPENAI_COMPAT_DEFAULT_MODEL:-}
+      RAGOPS_CODEX_BRIDGE_BASE_URL: ${RAGOPS_CODEX_BRIDGE_BASE_URL:-http://host.docker.internal:8765}
+      RAGOPS_CODEX_BRIDGE_TOKEN: ${RAGOPS_CODEX_BRIDGE_TOKEN:-}
     init: true
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     ports:
       - "${RAGOPS_BACKEND_PORT:-8000}:8000"
     volumes:
