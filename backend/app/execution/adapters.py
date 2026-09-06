@@ -8,9 +8,10 @@ from datetime import UTC, datetime
 from typing import Literal
 
 import httpx
-from pydantic import BaseModel, ConfigDict, SecretStr
+from pydantic import BaseModel, ConfigDict, Field, SecretStr, ValidationError
 
 from app.core.config import Settings
+from app.core.ids import uuid7_str
 from app.execution.model import (
     AdapterCapabilities,
     AttemptRecord,
@@ -22,6 +23,7 @@ from app.execution.model import (
     ModelTransport,
     ModelTransportRequest,
     ModelTransportResponse,
+    GenerationConfig,
     TokenUsage,
 )
 
@@ -32,8 +34,11 @@ SAFE_MESSAGES: dict[ModelErrorCode, str] = {
     ModelErrorCode.external_calls_disabled: "External model calls are disabled by server policy.",
     ModelErrorCode.capability_unsupported: "The selected provider does not support this request.",
     ModelErrorCode.authentication_failed: "Model provider authentication failed.",
+    ModelErrorCode.not_logged_in: "ChatGPT is not logged in on the Codex bridge host.",
+    ModelErrorCode.quota_exceeded: "The model provider account has no available quota.",
     ModelErrorCode.rate_limited: "The model provider rate-limited the request.",
     ModelErrorCode.timeout: "Model provider did not respond before the configured deadline.",
+    ModelErrorCode.cancelled: "The model provider request was cancelled.",
     ModelErrorCode.transport_error: "The model provider could not be reached.",
     ModelErrorCode.server_error: "The model provider reported a server error.",
     ModelErrorCode.response_invalid: "The model provider returned an invalid response.",
@@ -49,6 +54,54 @@ class OpenAICompatibleConfig(BaseModel):
     default_model: str
 
 
+class CodexBridgeConfig(BaseModel):
+    """Server-owned configuration for the fixed RAGOps host-bridge contract."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    base_url: str
+    bearer_token: SecretStr
+    default_model: str | None = None
+
+
+class CodexRateLimitWindow(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    used_percent: float | None = Field(default=None, ge=0, le=100)
+    window_duration_minutes: int | None = Field(default=None, ge=0)
+    resets_at: int | None = Field(default=None, ge=0)
+
+
+class CodexRateLimits(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    primary: CodexRateLimitWindow | None = None
+    secondary: CodexRateLimitWindow | None = None
+    rate_limit_reached: bool | None = None
+
+
+class CodexBridgeStatus(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract_version: Literal["1.0"]
+    login_status: Literal["logged_in", "logged_out", "unknown"]
+    codex_version: str | None = Field(default=None, max_length=120)
+    available_models: list[str] | None = Field(default=None, max_length=200)
+    rate_limits: CodexRateLimits | None = None
+
+
+class CodexBridgeGeneration(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    contract_version: Literal["1.0"]
+    answer: str = Field(min_length=1)
+    actual_model: str | None = Field(default=None, min_length=1, max_length=200)
+    finish_reason: Literal["stop", "length", "content_filter", "tool_call", "other"] | None = None
+    usage: TokenUsage | None = None
+    provider_request_id: str | None = Field(default=None, min_length=1, max_length=300)
+    session_isolated: Literal[True]
+
+
 class HttpxModelTransport:
     """Small production transport. Construction and health/status calls never perform I/O."""
 
@@ -56,15 +109,19 @@ class HttpxModelTransport:
         return asyncio.run(self._send_with_deadline(request))
 
     async def _send_with_deadline(self, request: ModelTransportRequest) -> ModelTransportResponse:
-        async def post() -> httpx.Response:
+        async def send() -> httpx.Response:
             async with httpx.AsyncClient(timeout=request.timeout_ms / 1000) as client:
+                if request.method == "GET":
+                    return await client.get(request.url, headers=request.headers)
                 return await client.post(
-                    request.url, headers=request.headers, json=request.json_body
+                    request.url,
+                    headers=request.headers,
+                    json=request.json_body,
                 )
 
         try:
             # Phase timeouts alone permit slow streaming; cancel the whole attempt.
-            response = await asyncio.wait_for(post(), timeout=request.timeout_ms / 1000)
+            response = await asyncio.wait_for(send(), timeout=request.timeout_ms / 1000)
         except httpx.TimeoutException as exc:
             raise TimeoutError from exc
         except httpx.TransportError as exc:
@@ -198,6 +255,8 @@ class OpenAICompatibleAdapter:
                 parsed = self._parse_response(response, started=invocation_started)
             except TimeoutError:
                 last_error = _error(ModelErrorCode.timeout, attempts=attempt_number)
+            except asyncio.CancelledError:
+                last_error = _error(ModelErrorCode.cancelled, attempts=attempt_number)
             except (ConnectionError, OSError):
                 last_error = _error(ModelErrorCode.transport_error, attempts=attempt_number)
             except ModelError as exc:
@@ -229,7 +288,11 @@ class OpenAICompatibleAdapter:
                 AttemptRecord(
                     number=attempt_number,
                     status=(
-                        "timeout" if last_error.code == ModelErrorCode.timeout else "failed"
+                        "timeout"
+                        if last_error.code == ModelErrorCode.timeout
+                        else "cancelled"
+                        if last_error.code == ModelErrorCode.cancelled
+                        else "failed"
                     ),
                     latency_ms=_elapsed_ms(self.monotonic, attempt_started),
                     error_code=last_error.code,
@@ -278,20 +341,12 @@ class OpenAICompatibleAdapter:
         *,
         started: float,
     ) -> ModelResponse:
-        request_id = _header(response.headers, "x-request-id")
-        if response.status_code in {401, 403}:
-            raise _error(
-                ModelErrorCode.authentication_failed,
-                provider_request_id=request_id,
-            )
-        if response.status_code == 429:
-            raise _error(
-                ModelErrorCode.rate_limited,
-                provider_request_id=request_id,
-                retry_after_ms=_retry_after_ms(response.headers),
-            )
-        if 500 <= response.status_code <= 599:
-            raise _error(ModelErrorCode.server_error, provider_request_id=request_id)
+        secrets = _configured_secrets(self.config.api_key)
+        request_id = _safe_identifier(
+            _header(response.headers, "x-request-id"),
+            secrets,
+        )
+        _raise_for_status(response, provider_request_id=request_id)
         if response.status_code < 200 or response.status_code >= 300 or not response.body:
             raise _error(ModelErrorCode.response_invalid, provider_request_id=request_id)
         try:
@@ -304,9 +359,12 @@ class OpenAICompatibleAdapter:
             raise _error(ModelErrorCode.response_invalid, provider_request_id=request_id) from None
         if not isinstance(answer, str) or not answer.strip():
             raise _error(ModelErrorCode.response_invalid, provider_request_id=request_id)
+        actual_model = body.get("model")
+        if not isinstance(actual_model, str) or not actual_model.strip():
+            actual_model = None
         return ModelResponse(
-            answer=answer,
-            actual_model=body.get("model") if isinstance(body.get("model"), str) else None,
+            answer=_redact_known_secrets(answer, secrets),
+            actual_model=_safe_identifier(actual_model, secrets),
             finish_reason=_finish_reason(choice.get("finish_reason")),
             latency_ms=_elapsed_ms(self.monotonic, started),
             usage=_usage(body.get("usage")),
@@ -323,6 +381,223 @@ class OpenAICompatibleAdapter:
         )
 
 
+class CodexChatGPTAdapter:
+    """Calls only the fixed, authenticated RAGOps Codex host-bridge HTTP contract."""
+
+    adapter_id = "codex_chatgpt"
+    capabilities = AdapterCapabilities(
+        external_network=True,
+        supports_seed=False,
+        supports_stop=False,
+        reports_usage=True,
+        reports_request_id=True,
+    )
+
+    def __init__(
+        self,
+        config: CodexBridgeConfig,
+        settings: Settings,
+        *,
+        transport: ModelTransport,
+        transport_is_mock: bool,
+        monotonic: Callable[[], float] = time.monotonic,
+    ) -> None:
+        self.config = config
+        self.settings = settings
+        self.transport = transport
+        self.transport_is_mock = transport_is_mock
+        self.monotonic = monotonic
+        self.last_attempts: list[AttemptRecord] = []
+
+    def read_status(self) -> CodexBridgeStatus:
+        """Explicit verification I/O; ordinary public status reads never call this method."""
+
+        self._ensure_enabled()
+        try:
+            response = self.transport.send(
+                ModelTransportRequest(
+                    method="GET",
+                    url=f"{self.config.base_url}/v1/status",
+                    headers=self._headers(),
+                    timeout_ms=self.settings.model_request_timeout_ms,
+                )
+            )
+        except TimeoutError:
+            raise _error(ModelErrorCode.timeout, attempts=1) from None
+        except asyncio.CancelledError:
+            raise _error(ModelErrorCode.cancelled, attempts=1) from None
+        except (ConnectionError, OSError):
+            raise _error(ModelErrorCode.transport_error, attempts=1) from None
+        secrets = _configured_secrets(self.config.bearer_token)
+        request_id = _safe_identifier(
+            _header(response.headers, "x-request-id"),
+            secrets,
+        )
+        _raise_for_status(response, provider_request_id=request_id, codex_bridge=True)
+        try:
+            parsed = CodexBridgeStatus.model_validate_json(response.body)
+        except (ValidationError, ValueError):
+            raise _error(
+                ModelErrorCode.response_invalid,
+                attempts=1,
+                provider_request_id=request_id,
+            ) from None
+        return parsed.model_copy(
+            update={
+                "codex_version": _safe_identifier(parsed.codex_version, secrets),
+                "available_models": (
+                    [
+                        model
+                        for model in parsed.available_models
+                        if _safe_identifier(model, secrets) is not None
+                    ]
+                    if parsed.available_models is not None
+                    else None
+                ),
+            }
+        )
+
+    def generate(self, request: ModelRequest) -> ModelResponse:
+        self._ensure_enabled()
+        effective_generation_config(self.adapter_id, request.generation)
+        self.last_attempts = []
+        started_at = datetime.now(UTC)
+        started = self.monotonic()
+        bridge_request_id = f"bridge_{uuid7_str()}"
+        payload: dict[str, object] = {
+            "contract_version": "1.0",
+            "request_id": bridge_request_id,
+            "session_mode": "isolated_ephemeral",
+            "model": request.generation.model,
+            "instructions": request.prompt,
+            "input": {
+                "question": request.question,
+                "contexts": [
+                    {"position": item.position, "text": item.text}
+                    for item in request.context
+                ],
+            },
+        }
+        error: ModelError | None = None
+        secrets = _configured_secrets(self.config.bearer_token)
+        try:
+            response = self.transport.send(
+                ModelTransportRequest(
+                    url=f"{self.config.base_url}/v1/generate",
+                    headers=self._headers(content_type=True),
+                    json_body=payload,
+                    timeout_ms=self.settings.model_request_timeout_ms,
+                )
+            )
+            if _elapsed_ms(self.monotonic, started) > self.settings.model_request_timeout_ms:
+                raise TimeoutError
+            request_id = _safe_identifier(
+                _header(response.headers, "x-request-id"),
+                secrets,
+            )
+            _raise_for_status(response, provider_request_id=request_id, codex_bridge=True)
+            try:
+                parsed = CodexBridgeGeneration.model_validate_json(response.body)
+            except (ValidationError, ValueError):
+                raise _error(
+                    ModelErrorCode.response_invalid,
+                    provider_request_id=request_id,
+                ) from None
+        except TimeoutError:
+            error = _error(ModelErrorCode.timeout, attempts=1)
+        except asyncio.CancelledError:
+            error = _error(ModelErrorCode.cancelled, attempts=1)
+        except (ConnectionError, OSError):
+            error = _error(ModelErrorCode.transport_error, attempts=1)
+        except ModelError as exc:
+            error = exc
+            error.attempts = 1
+
+        latency_ms = _elapsed_ms(self.monotonic, started)
+        if error is not None:
+            self.last_attempts = [
+                AttemptRecord(
+                    number=1,
+                    status=(
+                        "timeout"
+                        if error.code == ModelErrorCode.timeout
+                        else "cancelled"
+                        if error.code == ModelErrorCode.cancelled
+                        else "failed"
+                    ),
+                    latency_ms=latency_ms,
+                    error_code=error.code,
+                    retry_delay_ms=0,
+                    started_at=started_at,
+                    finished_at=datetime.now(UTC),
+                )
+            ]
+            raise error
+
+        self.last_attempts = [
+            AttemptRecord(
+                number=1,
+                status="succeeded",
+                latency_ms=latency_ms,
+                error_code=None,
+                retry_delay_ms=0,
+                started_at=started_at,
+                finished_at=datetime.now(UTC),
+            )
+        ]
+        return ModelResponse(
+            answer=_redact_known_secrets(parsed.answer, secrets),
+            actual_model=_safe_identifier(parsed.actual_model, secrets),
+            finish_reason=parsed.finish_reason,
+            latency_ms=latency_ms,
+            usage=parsed.usage,
+            provider_request_id=(
+                _safe_identifier(parsed.provider_request_id, secrets) or request_id
+            ),
+            is_mock=self.transport_is_mock,
+        )
+
+    def _ensure_enabled(self) -> None:
+        if not self.transport_is_mock and not self.settings.model_external_calls_enabled:
+            raise _error(ModelErrorCode.external_calls_disabled)
+
+    def _headers(self, *, content_type: bool = False) -> dict[str, str]:
+        headers = {
+            "accept": "application/json",
+            "authorization": f"Bearer {self.config.bearer_token.get_secret_value()}",
+        }
+        if content_type:
+            headers["content-type"] = "application/json"
+        return headers
+
+
+def effective_generation_config(
+    adapter_id: str,
+    generation: GenerationConfig,
+) -> dict[str, object]:
+    """Return only parameters actually honored by a channel, rejecting unsafe ambiguity."""
+
+    if adapter_id == "openai_compatible":
+        return generation.model_dump(mode="json")
+    if adapter_id in {"mock", "codex_chatgpt"}:
+        if adapter_id == "codex_chatgpt":
+            unsupported = []
+            if generation.temperature != 0.0:
+                unsupported.append("temperature")
+            if generation.top_p != 1.0:
+                unsupported.append("top_p")
+            if generation.max_output_tokens != 512:
+                unsupported.append("max_output_tokens")
+            if generation.stop:
+                unsupported.append("stop")
+            if generation.seed is not None:
+                unsupported.append("seed")
+            if unsupported:
+                raise _error(ModelErrorCode.capability_unsupported)
+        return {"model": generation.model}
+    raise _error(ModelErrorCode.adapter_not_found)
+
+
 class DefaultModelAdapterFactory:
     def __init__(self, settings: Settings) -> None:
         self.settings = settings
@@ -336,42 +611,71 @@ class DefaultModelAdapterFactory:
     ) -> ModelAdapter:
         if adapter_id == "mock":
             return MockModelAdapter()
-        if adapter_id != "openai_compatible":
-            raise _error(ModelErrorCode.adapter_not_found)
-
-        if isinstance(server_config, OpenAICompatibleConfig):
-            config = server_config
-        else:
-            config = OpenAICompatibleConfig(
-                base_url=self.settings.openai_compat_base_url
-                or ("https://test.invalid" if test_transport is not None else ""),
-                auth_mode=self.settings.openai_compat_auth_mode,
-                api_key=(
-                    self.settings.openai_compat_api_key.get_secret_value()
-                    if self.settings.openai_compat_api_key
-                    else None
-                ),
-                default_model=self.settings.openai_compat_default_model
-                or ("test-model" if test_transport is not None else ""),
+        if adapter_id == "openai_compatible":
+            if isinstance(server_config, OpenAICompatibleConfig):
+                config = server_config
+            else:
+                config = OpenAICompatibleConfig(
+                    base_url=self.settings.openai_compat_base_url
+                    or ("https://test.invalid" if test_transport is not None else ""),
+                    auth_mode=self.settings.openai_compat_auth_mode,
+                    api_key=(
+                        self.settings.openai_compat_api_key.get_secret_value()
+                        if self.settings.openai_compat_api_key
+                        else None
+                    ),
+                    default_model=self.settings.openai_compat_default_model
+                    or ("test-model" if test_transport is not None else ""),
+                )
+            complete = bool(
+                config.base_url
+                and config.default_model
+                and (
+                    config.auth_mode == "none"
+                    or (config.api_key and config.api_key.get_secret_value().strip())
+                )
             )
-        complete = bool(
-            config.base_url
-            and config.default_model
-            and (
-                config.auth_mode == "none"
-                or (config.api_key and config.api_key.get_secret_value().strip())
+            if test_transport is None and not complete:
+                raise _error(ModelErrorCode.not_configured)
+            if test_transport is None and not self.settings.model_external_calls_enabled:
+                raise _error(ModelErrorCode.external_calls_disabled)
+            return OpenAICompatibleAdapter(
+                config,
+                self.settings,
+                transport=test_transport or HttpxModelTransport(),
+                transport_is_mock=test_transport is not None,
             )
-        )
-        if test_transport is None and not complete:
-            raise _error(ModelErrorCode.not_configured)
-        if test_transport is None and not self.settings.model_external_calls_enabled:
-            raise _error(ModelErrorCode.external_calls_disabled)
-        return OpenAICompatibleAdapter(
-            config,
-            self.settings,
-            transport=test_transport or HttpxModelTransport(),
-            transport_is_mock=test_transport is not None,
-        )
+        if adapter_id == "codex_chatgpt":
+            if isinstance(server_config, CodexBridgeConfig):
+                codex_config = server_config
+            else:
+                codex_config = CodexBridgeConfig(
+                    base_url=self.settings.codex_bridge_base_url
+                    or ("https://test.invalid" if test_transport is not None else ""),
+                    bearer_token=(
+                        self.settings.codex_bridge_token.get_secret_value()
+                        if self.settings.codex_bridge_token
+                        else "test-bridge-token-at-least-32-chars"
+                        if test_transport is not None
+                        else ""
+                    ),
+                    default_model=self.settings.codex_default_model,
+                )
+            complete = bool(
+                codex_config.base_url
+                and len(codex_config.bearer_token.get_secret_value().strip()) >= 32
+            )
+            if test_transport is None and not complete:
+                raise _error(ModelErrorCode.not_configured)
+            if test_transport is None and not self.settings.model_external_calls_enabled:
+                raise _error(ModelErrorCode.external_calls_disabled)
+            return CodexChatGPTAdapter(
+                codex_config,
+                self.settings,
+                transport=test_transport or HttpxModelTransport(),
+                transport_is_mock=test_transport is not None,
+            )
+        raise _error(ModelErrorCode.adapter_not_found)
 
 
 def _error(
@@ -397,11 +701,93 @@ def _error(
     )
 
 
+def _raise_for_status(
+    response: ModelTransportResponse,
+    *,
+    provider_request_id: str | None,
+    codex_bridge: bool = False,
+) -> None:
+    status_code = response.status_code
+    provider_code = _safe_provider_error_code(response.body)
+    if status_code in {401, 403}:
+        raise _error(
+            ModelErrorCode.authentication_failed,
+            provider_request_id=provider_request_id,
+        )
+    if codex_bridge and status_code == 409 and provider_code == "CODEX_NOT_LOGGED_IN":
+        raise _error(
+            ModelErrorCode.not_logged_in,
+            provider_request_id=provider_request_id,
+        )
+    if status_code == 402 or (
+        status_code == 429
+        and provider_code
+        in {"INSUFFICIENT_QUOTA", "QUOTA_EXCEEDED", "CODEX_QUOTA_EXCEEDED"}
+    ):
+        raise _error(
+            ModelErrorCode.quota_exceeded,
+            provider_request_id=provider_request_id,
+        )
+    if status_code == 429:
+        raise _error(
+            ModelErrorCode.rate_limited,
+            provider_request_id=provider_request_id,
+            retry_after_ms=_retry_after_ms(response.headers),
+        )
+    if status_code in {408, 504}:
+        raise _error(ModelErrorCode.timeout, provider_request_id=provider_request_id)
+    if status_code == 499:
+        raise _error(ModelErrorCode.cancelled, provider_request_id=provider_request_id)
+    if 500 <= status_code <= 599:
+        raise _error(ModelErrorCode.server_error, provider_request_id=provider_request_id)
+
+
+def _safe_provider_error_code(body: bytes) -> str | None:
+    try:
+        parsed = json.loads(body)
+    except (ValueError, UnicodeDecodeError):
+        return None
+    if not isinstance(parsed, dict):
+        return None
+    error = parsed.get("error")
+    if not isinstance(error, dict):
+        return None
+    code = error.get("code")
+    if not isinstance(code, str) or len(code) > 80:
+        return None
+    return code.upper()
+
+
 def _header(headers: dict[str, str], name: str) -> str | None:
     for key, value in headers.items():
         if key.lower() == name:
             return value[:300]
     return None
+
+
+def _configured_secrets(*values: SecretStr | None) -> list[str]:
+    return [
+        value.get_secret_value()
+        for value in values
+        if value is not None and value.get_secret_value()
+    ]
+
+
+def _safe_identifier(value: str | None, secrets: list[str]) -> str | None:
+    if value is None or not value.strip():
+        return None
+    if any(
+        secret in value or (len(value) >= 8 and value in secret)
+        for secret in secrets
+    ):
+        return None
+    return value
+
+
+def _redact_known_secrets(value: str, secrets: list[str]) -> str:
+    for secret in secrets:
+        value = value.replace(secret, "[REDACTED]")
+    return value
 
 
 def _retry_after_ms(headers: dict[str, str]) -> int | None:

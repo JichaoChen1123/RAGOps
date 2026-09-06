@@ -94,8 +94,11 @@ class ModelErrorCode(str, Enum):
     external_calls_disabled = "EXTERNAL_CALLS_DISABLED"
     capability_unsupported = "PROVIDER_CAPABILITY_UNSUPPORTED"
     authentication_failed = "PROVIDER_AUTHENTICATION_FAILED"
+    not_logged_in = "PROVIDER_NOT_LOGGED_IN"
+    quota_exceeded = "PROVIDER_QUOTA_EXCEEDED"
     rate_limited = "PROVIDER_RATE_LIMITED"
     timeout = "PROVIDER_TIMEOUT"
+    cancelled = "PROVIDER_CANCELLED"
     transport_error = "PROVIDER_TRANSPORT_ERROR"
     server_error = "PROVIDER_SERVER_ERROR"
     response_invalid = "PROVIDER_RESPONSE_INVALID"
@@ -168,10 +171,10 @@ class ModelAdapterFactory(Protocol):
 
 
 class ModelTransportRequest(StrictModel):
-    method: Literal["POST"] = "POST"
+    method: Literal["GET", "POST"] = "POST"
     url: str
     headers: dict[str, str]
-    json_body: dict[str, object]
+    json_body: dict[str, object] | None = None
     timeout_ms: int = Field(ge=1)
 
 

@@ -265,3 +265,37 @@ class ModelExecutionStatusResponse(BaseModel):
     execution_available: bool
     active_adapter: dict[str, Any]
     providers: list[dict[str, Any]]
+
+
+class ModelGenerationVerificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+
+    @field_validator("model")
+    @classmethod
+    def non_blank_model(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value:
+            raise ValueError("model must not be blank")
+        return value
+
+
+class ModelExecutionVerificationResponse(BaseModel):
+    schema_version: Literal["2.0"] = "2.0"
+    provider_id: Literal["codex_chatgpt", "openai_compatible"]
+    verification_type: Literal["login", "generation"]
+    verified_at: datetime
+    login_status: Literal["logged_in", "logged_out", "unknown"] | None
+    generation_verified: bool | None
+    codex_version: str | None
+    available_models: list[str] | None
+    rate_limits: dict[str, Any] | None
+    requested_model: str | None
+    actual_model: str | None
+    usage: dict[str, int] | None
+    cost: float | None
+    provider_request_id: str | None
+    message: str
