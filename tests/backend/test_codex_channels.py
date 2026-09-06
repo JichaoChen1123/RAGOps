@@ -4,6 +4,7 @@ import asyncio
 import io
 import json
 import subprocess
+import sys
 from pathlib import Path
 from typing import Any
 
@@ -37,6 +38,9 @@ from app.execution.model import (
     ModelTransportResponse,
 )
 from app.main import create_app
+
+
+FAKE_CODEX_APP_SERVER = Path(__file__).parents[1] / "fixtures" / "fake_codex_app_server.py"
 
 
 class MemoryTransport:
@@ -579,6 +583,119 @@ def test_codex_process_disables_features_and_removes_model_credentials(
     assert "RAGOPS_CODEX_BRIDGE_TOKEN" not in environment
     assert "OPENAI_API_KEY" not in environment
     assert environment["SAFE_BRIDGE_TEST_VALUE"] == "retained"
+
+
+def _subprocess_runner(
+    tmp_path: Path, monkeypatch, scenario: str = "happy", timeout_seconds: float = 5
+) -> tuple[CodexAppServerRunner, Path]:
+    log_path = tmp_path / f"{scenario}.jsonl"
+
+    def process_factory(_command: list[str], **kwargs: object):
+        environment = dict(kwargs.pop("env"))
+        # A Python test double can briefly retain its Windows cwd handle while
+        # reader threads drain. The protocol still receives and validates the
+        # isolated sandbox path; launch the fixture itself from the test root.
+        kwargs["cwd"] = str(log_path.parent)
+        environment["FAKE_CODEX_SCENARIO"] = scenario
+        environment["FAKE_CODEX_LOG"] = str(log_path)
+        return subprocess.Popen(
+            [sys.executable, str(FAKE_CODEX_APP_SERVER)],
+            **kwargs,
+            env=environment,
+        )
+
+    def connection_factory(**kwargs: object) -> JsonRpcProcess:
+        return JsonRpcProcess(**kwargs, process_factory=process_factory)
+
+    monkeypatch.setenv("RAGOPS_CODEX_BRIDGE_TOKEN", "must-not-reach-child")
+    monkeypatch.setenv("OPENAI_API_KEY", "must-not-reach-child")
+    return (
+        CodexAppServerRunner(
+            executable="codex",
+            sandbox_root=tmp_path / "sandbox-root",
+            timeout_seconds=timeout_seconds,
+            connection_factory=connection_factory,
+        ),
+        log_path,
+    )
+
+
+def _logged_methods(path: Path) -> list[str | None]:
+    return [
+        json.loads(line).get("method")
+        for line in path.read_text(encoding="utf-8").splitlines()
+    ]
+
+
+def test_real_subprocess_protocol_status_and_generation_are_offline_and_isolated(
+    tmp_path: Path, monkeypatch
+) -> None:
+    runner, log_path = _subprocess_runner(tmp_path, monkeypatch, "rerouted")
+
+    status = runner.inspect()
+    result = runner.generate(_bridge_payload())
+
+    assert status["codex_version"] == "codex-cli/0.153.4"
+    assert status["authentication_status"] == "authenticated"
+    assert status["models"][0]["id"] == "account-model"
+    assert status["rate_limits"]["primary"]["used_percent"] == 25
+    assert "must-not-leak" not in json.dumps(status)
+    assert result == {
+        "answer": "offline grounded answer",
+        "actual_model": "account-model-rerouted",
+        "finish_reason": "stop",
+        "latency_ms": result["latency_ms"],
+        "usage": {"input_tokens": 11, "output_tokens": 4, "total_tokens": 15},
+        "provider_request_id": "turn-offline",
+    }
+    assert result["latency_ms"] >= 0
+    methods = _logged_methods(log_path)
+    assert methods.count("initialize") == 2
+    assert methods.count("thread/start") == 1
+    assert methods.count("turn/start") == 1
+
+
+@pytest.mark.parametrize(
+    ("scenario", "expected_code", "interrupted"),
+    [
+        ("tool", "CODEX_ISOLATION_VIOLATION", True),
+        ("server_request", "CODEX_ISOLATION_VIOLATION", True),
+        ("instructions", "CODEX_ISOLATION_VIOLATION", False),
+        ("invalid_json", "CODEX_PROTOCOL_INCOMPATIBLE", False),
+        ("rpc_error", "CODEX_LOGIN_EXPIRED", False),
+        ("usage_limited", "CODEX_USAGE_LIMITED", False),
+        ("missing_final", "CODEX_RESPONSE_INVALID", False),
+        ("duplicate_final", "CODEX_RESPONSE_INVALID", False),
+    ],
+)
+def test_real_subprocess_protocol_fails_closed(
+    tmp_path: Path,
+    monkeypatch,
+    scenario: str,
+    expected_code: str,
+    interrupted: bool,
+) -> None:
+    runner, log_path = _subprocess_runner(tmp_path, monkeypatch, scenario)
+
+    with pytest.raises(CodexBridgeError) as caught:
+        runner.generate(_bridge_payload())
+
+    assert caught.value.code == expected_code
+    assert ("turn/interrupt" in _logged_methods(log_path)) is interrupted
+
+
+def test_real_subprocess_protocol_timeout_interrupts_once_without_resubmit(
+    tmp_path: Path, monkeypatch
+) -> None:
+    runner, log_path = _subprocess_runner(tmp_path, monkeypatch, "timeout", 2)
+
+    with pytest.raises(CodexBridgeError) as caught:
+        runner.generate(_bridge_payload())
+
+    methods = _logged_methods(log_path)
+    assert caught.value.code == "CODEX_TIMEOUT"
+    assert methods.count("turn/start") == 1
+    assert methods.count("turn/interrupt") == 1
 
 
 def test_status_read_is_local_and_verification_failure_remains_visible(monkeypatch) -> None:
