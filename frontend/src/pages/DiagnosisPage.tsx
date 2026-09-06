@@ -184,6 +184,7 @@ export function DiagnosisPage() {
           <div><dt>执行 / 质量状态</dt><dd><StatusBadge value={diagnosis.run.status} /> <StatusBadge value={diagnosis.qualityStatus} /></dd></div>
           <div><dt>执行器 / 提供方</dt><dd><code>{diagnosis.run.adapterId ?? '未知'}</code> / <code>{diagnosis.run.providerId ?? '无或未知'}</code></dd></div>
           <div><dt>请求 / 实际模型</dt><dd><code>{diagnosis.run.requestedModel ?? '未知'}</code> / <code>{diagnosis.run.actualModel ?? '未知'}</code></dd></div>
+          <div><dt>模拟标记 / Request ID</dt><dd>{diagnosis.run.isMock === null ? '未知' : diagnosis.run.isMock ? 'SIMULATED' : '真实通道'} / <code>{diagnosis.run.providerRequestId ?? '未知'}</code></dd></div>
           <div><dt>Token 用量</dt><dd>{diagnosis.run.usage ? `${diagnosis.run.usage.inputTokens} 输入 / ${diagnosis.run.usage.outputTokens} 输出 / ${diagnosis.run.usage.totalTokens} 总计` : '未知'}</dd></div>
           <div><dt>成本 / 延迟</dt><dd>{diagnosis.run.cost === null ? '成本未知' : `$${diagnosis.run.cost}`} · {diagnosis.run.latencyMs === null ? '延迟未知' : `${diagnosis.run.latencyMs}ms`}</dd></div>
           <div><dt>完成原因 / 尝试</dt><dd>{diagnosis.run.finishReason ?? '未知'} / {diagnosis.run.attemptCount ?? '未知'}</dd></div>

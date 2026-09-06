@@ -9,6 +9,7 @@ export type ViewScenario = 'normal' | 'loading' | 'empty' | 'error' | 'partial';
 export type SampleReviewStatus = 'pending' | 'confirmed' | 'dismissed';
 export type ContextOrigin = 'provided' | 'retrieved' | 'legacy_unknown';
 export type ProviderConfigurationStatus = 'not_configured' | 'configured_unverified' | 'verified' | 'unknown';
+export type ModelChannel = 'mock' | 'codex_chatgpt' | 'openai_compatible';
 
 export interface MetricValue {
   key: string;
@@ -65,14 +66,18 @@ export interface GenerationConfig {
   maxOutputTokens: number;
   stop: string[];
   seed: number | null;
+  reasoningEffort?: string | null;
 }
 
 export interface ExecutionSnapshot {
   contractVersion: string;
   adapterId: string;
   providerId: string | null;
+  providerName?: string | null;
   prompt: PromptSnapshot;
   generation: GenerationConfig;
+  requestedGeneration?: GenerationConfig;
+  effectiveGeneration?: Record<string, unknown>;
   contextPolicy: 'dataset_contexts' | 'none' | 'retrieval';
   dataset: {
     id: string;
@@ -222,6 +227,7 @@ export interface SampleSummary {
   citations: CitationEvidence[];
   error: ModelErrorSummary | null;
   isMock: boolean | null;
+  run: SampleRunDetail;
 }
 
 export interface DatasetSampleLabelsInput {
@@ -276,7 +282,7 @@ export interface DatasetImportResult {
 export interface EvaluationTaskCreateInput {
   datasetId: string;
   name?: string;
-  adapterId: 'mock' | 'openai_compatible';
+  adapterId: ModelChannel;
   prompt: PromptSnapshot;
   generation: GenerationConfig;
   contextPolicy: 'dataset_contexts' | 'none' | 'retrieval';
@@ -344,18 +350,49 @@ export interface AdapterCapabilities {
   externalNetwork: boolean;
   supportsSeed: boolean;
   supportsStop: boolean;
+  supportsTemperature: boolean;
+  supportsTopP: boolean;
+  supportsMaxOutputTokens: boolean;
+  supportsReasoningEffort: boolean;
+  independentSessionPerSample: boolean;
   reportsUsage: boolean;
   reportsRequestId: boolean;
 }
 
 export interface ProviderStatus {
   providerId: string | null;
+  providerName: string | null;
+  protocol: string | null;
   configurationStatus: ProviderConfigurationStatus;
   baseUrlConfigured: boolean | null;
   credentialConfigured: boolean | null;
   defaultModelConfigured: boolean | null;
+  defaultModel: string | null;
+  authenticationStatus: string;
+  verificationStatus: 'not_run' | 'succeeded' | 'failed' | 'unknown';
+  generationVerified: boolean | null;
+  models: Array<{ id: string; displayName: string; isDefault: boolean; reasoningEfforts: string[] }>;
+  rateLimits: Record<string, unknown> | null;
+  codexVersion: string | null;
+  protocolCompatible: boolean | null;
   lastVerifiedAt: string | null;
   verificationMessage: string | null;
+  verificationErrorCode: string | null;
+}
+
+export interface ProviderVerificationResult {
+  providerId: Exclude<ModelChannel, 'mock'>;
+  configurationStatus: 'configured_unverified' | 'verified';
+  verificationStatus: 'succeeded';
+  authenticationStatus: string;
+  generationVerified: boolean;
+  checkedAt: string;
+  message: string;
+  models: ProviderStatus['models'];
+  rateLimits: Record<string, unknown> | null;
+  codexVersion: string | null;
+  protocolCompatible: boolean | null;
+  warning: string | null;
 }
 
 export interface ModelExecutionStatus {
@@ -375,6 +412,10 @@ export interface ModelExecutionStatus {
 export interface ApiClient {
   getProjectOverview(projectId: string): Promise<ProjectOverview>;
   getModelExecutionStatus(): Promise<ModelExecutionStatus>;
+  verifyModelProvider(
+    providerId: Exclude<ModelChannel, 'mock'>,
+    input: { model?: string; performGeneration: boolean },
+  ): Promise<ProviderVerificationResult>;
   listDatasets(projectId: string): Promise<Dataset[]>;
   createDataset(projectId: string, input: DatasetCreateInput): Promise<Dataset>;
   importDatasetSamples(projectId: string, datasetId: string, samples: DatasetSampleInput[]): Promise<DatasetImportResult>;

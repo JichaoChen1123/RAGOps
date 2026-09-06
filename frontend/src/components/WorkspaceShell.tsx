@@ -115,10 +115,12 @@ export function WorkspaceShell() {
   const preserveState = (path: string) => scenario === 'normal' ? path : `${path}?state=${scenario}`;
   const matchedTargets = useMemo(() => searchTargets.filter((target) =>
     `${target.label} ${target.description}`.toLowerCase().includes(searchQuery.trim().toLowerCase())), [searchQuery]);
-  const providerStatus = runtimeStatus.state === 'success' ? runtimeStatus.data.providers[0] : undefined;
   const backendAdapterLabel = runtimeStatus.state === 'success'
     ? runtimeStatus.data.backendExecutionAdapter ?? '未知'
     : runtimeStatus.state === 'loading' ? '读取中' : '未知';
+  const providerStatus = runtimeStatus.state === 'success'
+    ? runtimeStatus.data.providers.find((provider) => provider.providerId === runtimeStatus.data.backendExecutionAdapter)
+    : undefined;
   const providerLabel = runtimeStatus.state === 'success'
     ? providerStatus?.configurationStatus === 'verified' ? '真实已验证'
       : providerStatus?.configurationStatus === 'configured_unverified' ? '已配置未验证'
@@ -246,7 +248,7 @@ export function WorkspaceShell() {
           <div><strong>2. 发起评测</strong><p>显式选择执行器；不可用方式由后端拒绝，不会回退到 Mock。</p></div>
           <div><strong>3. 定位故障</strong><p>从完成任务进入报告，再下钻失败样本核对检索证据与引用。</p></div>
         </div>
-        <p className="form-hint">顶部同时展示前端数据源、后端执行器和提供方配置状态。API 数据不等于模型已连接；本阶段没有真实连接验证按钮。</p>
+        <p className="form-hint">顶部同时展示前端数据源、后端执行器和提供方配置状态。API 数据不等于模型已连接；连接检查需在评测任务页由用户主动发起。</p>
       </Dialog>
       <Dialog open={roadmapOpen} title="版本对比 · 下一阶段" eyebrow="ROADMAP / PHASE 2" onClose={() => setRoadmapOpen(false)}>
         <div className="availability-card">
@@ -263,11 +265,11 @@ export function WorkspaceShell() {
         <div className="configuration-snapshot">
           <div><Database size={16} /><span><small>FRONTEND DATA SOURCE</small><strong>{apiMode === 'mock' ? 'Mock fixture（浏览器内存）' : 'RAGOps API（仅表示连接项目后端）'}</strong></span><i>{apiMode.toUpperCase()}</i></div>
           <div><Bot size={16} /><span><small>BACKEND EXECUTION ADAPTER</small><strong>{backendAdapterLabel}</strong></span><i>{runtimeStatus.state === 'success' && runtimeStatus.data.activeAdapter?.isMock ? 'MOCK' : 'READ ONLY'}</i></div>
-          <div><SlidersHorizontal size={16} /><span><small>PROVIDER CONFIGURATION</small><strong>{providerStatus?.providerId ?? '提供方未知'} · {providerLabel}</strong></span>{providerStatus ? <StatusBadge value={providerStatus.configurationStatus} /> : <i>UNKNOWN</i>}</div>
+          {runtimeStatus.state === 'success' && runtimeStatus.data.providers.map((provider) => <div key={provider.providerId}><SlidersHorizontal size={16} /><span><small>PROVIDER CONFIGURATION</small><strong>{provider.providerId ?? '提供方未知'} · {provider.configurationStatus === 'verified' ? '真实已验证' : provider.configurationStatus === 'configured_unverified' ? '已配置未验证' : provider.configurationStatus === 'not_configured' ? '未配置' : '未知'}</strong><small>{provider.protocol ?? '协议未知'} · 登录 {provider.authenticationStatus} · 生成 {provider.generationVerified ? '已验证' : '未验证'}</small></span><StatusBadge value={provider.configurationStatus} /></div>)}
         </div>
         {runtimeStatus.state === 'error' && <p className="form-hint">状态 API 读取失败：{runtimeStatus.message}。前端不会据此猜测执行器或提供方已连接。</p>}
         {runtimeStatus.state === 'success' && <dl className="detail-list runtime-detail"><div><dt>外部调用总开关</dt><dd>{runtimeStatus.data.externalCallsEnabled === null ? '未知' : runtimeStatus.data.externalCallsEnabled ? '已开启' : '已关闭'}</dd></div><div><dt>执行可用</dt><dd>{runtimeStatus.data.executionAvailable === null ? '未知' : runtimeStatus.data.executionAvailable ? '是' : '否'}</dd></div><div><dt>状态来源</dt><dd>{runtimeStatus.data.source === 'fixture' ? '前端模拟状态 fixture' : '后端状态 API（无提供方探测）'}</dd></div></dl>}
-        <p className="form-hint">配置完整只表示“已配置但未验证”。本阶段不提供真实验证入口，也不会从浏览器发送凭据或提供方探测请求。</p>
+        <p className="form-hint">配置完整只表示“已配置但未验证”。真实验证必须在评测任务页由用户主动发起；浏览器不会接收或发送任何提供方凭据。</p>
       </Dialog>
       <Toast message={feedback} onDismiss={() => setFeedback(null)} />
     </div>

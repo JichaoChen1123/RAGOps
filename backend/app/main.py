@@ -46,6 +46,7 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     )
     application.state.settings = resolved_settings
     application.state.database = database
+    application.state.provider_verifications = {}
 
     @application.middleware("http")
     async def request_context(request: Request, call_next):  # type: ignore[no-untyped-def]
