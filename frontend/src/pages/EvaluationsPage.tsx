@@ -25,6 +25,11 @@ const taskStatuses: { value: TaskFilter; label: string }[] = [
 
 const isTerminal = (status: TaskStatus) => status === 'completed' || status === 'failed' || status === 'cancelled';
 
+const diagnosticValue = (error: ApiError, key: string) => {
+  const value = error.details?.[key];
+  return typeof value === 'string' && value ? value : null;
+};
+
 export function EvaluationsPage() {
   const { projectId = 'demo' } = useParams();
   const { scenario } = useOutletContext<WorkspaceOutletContext>();
@@ -189,7 +194,15 @@ export function EvaluationsPage() {
       setFeedback(`${result.message}${result.warning ? ` ${result.warning}` : ''}`);
     } catch (error) {
       const code = error instanceof ApiError && error.code ? ` [${error.code}]` : '';
-      setFeedback(error instanceof Error ? `验证失败${code}：${error.message}` : '验证失败，请检查后端配置');
+      const reasonCode = error instanceof ApiError ? diagnosticValue(error, 'reason_code') : null;
+      const diagnosticId = error instanceof ApiError ? diagnosticValue(error, 'diagnostic_id') : null;
+      const diagnostic = [
+        reasonCode ? `原因 ${reasonCode}` : null,
+        diagnosticId ? `诊断 ID ${diagnosticId}` : null,
+      ].filter(Boolean).join(' · ');
+      setFeedback(error instanceof Error
+        ? `验证失败${code}${diagnostic ? `（${diagnostic}）` : ''}：${error.message}`
+        : '验证失败，请检查后端配置');
     } finally {
       setVerifying(null);
     }
@@ -265,7 +278,7 @@ export function EvaluationsPage() {
           <label>Prompt 版本<input aria-label="Prompt 版本" value={draft.promptVersion} onChange={(event) => setDraft((current) => ({ ...current, promptVersion: event.target.value }))} /></label>
           <label className="field-full">Prompt 文本<textarea required aria-label="Prompt 文本" value={draft.promptText} onChange={(event) => setDraft((current) => ({ ...current, promptText: event.target.value }))} /></label>
         </form>
-        {draft.adapterId !== 'mock' && <div className="channel-status" aria-label="所选模型通道状态"><div><strong>{selectedProvider?.providerName ?? draft.adapterId}</strong><span>{selectedProvider?.configurationStatus ?? '状态未知'} · 登录 {selectedProvider?.authenticationStatus ?? 'unknown'} · 最近验证 {selectedProvider?.verificationStatus ?? 'unknown'} · 真实生成 {selectedProvider?.generationVerified ? '已验证' : '未验证'}</span><small>{selectedProvider?.verificationErrorCode ? `${selectedProvider.verificationErrorCode} · ` : ''}{selectedProvider?.verificationMessage ?? selectedProvider?.protocol ?? '协议未知'}{selectedProvider?.codexVersion ? ` · ${selectedProvider.codexVersion}` : ''}</small></div><div className="channel-actions">{draft.adapterId === 'codex_chatgpt' && <button className="button button-secondary" type="button" disabled={apiMode === 'mock' || verifying !== null} onClick={() => void verifyProvider(false)}><ShieldCheck size={15} />{verifying === 'authentication' ? '检查中' : '检查登录'}</button>}<button className="button button-secondary" type="button" disabled={apiMode === 'mock' || verifying !== null || !draft.model} onClick={() => setPendingGenerationVerification(true)}><PlugZap size={15} />{verifying === 'generation' ? '验证中' : draft.adapterId === 'codex_chatgpt' ? '真实小请求验证' : '付费小请求验证'}</button></div></div>}
+        {draft.adapterId !== 'mock' && <div className="channel-status" aria-label="所选模型通道状态"><div><strong>{selectedProvider?.providerName ?? draft.adapterId}</strong><span>{selectedProvider?.configurationStatus ?? '状态未知'} · 登录 {selectedProvider?.authenticationStatus ?? 'unknown'} · 最近验证 {selectedProvider?.verificationStatus ?? 'unknown'} · 真实生成 {selectedProvider?.generationVerified ? '已验证' : '未验证'}</span><small>{selectedProvider?.verificationErrorCode ? `${selectedProvider.verificationErrorCode} · ` : ''}{selectedProvider?.verificationReasonCode ? `原因 ${selectedProvider.verificationReasonCode} · ` : ''}{selectedProvider?.verificationDiagnosticId ? `诊断 ID ${selectedProvider.verificationDiagnosticId} · ` : ''}{selectedProvider?.verificationMessage ?? selectedProvider?.protocol ?? '协议未知'}{selectedProvider?.codexVersion ? ` · ${selectedProvider.codexVersion}` : ''}</small></div><div className="channel-actions">{draft.adapterId === 'codex_chatgpt' && <button className="button button-secondary" type="button" disabled={apiMode === 'mock' || verifying !== null} onClick={() => void verifyProvider(false)}><ShieldCheck size={15} />{verifying === 'authentication' ? '检查中' : '检查登录'}</button>}<button className="button button-secondary" type="button" disabled={apiMode === 'mock' || verifying !== null || !draft.model} onClick={() => setPendingGenerationVerification(true)}><PlugZap size={15} />{verifying === 'generation' ? '验证中' : draft.adapterId === 'codex_chatgpt' ? '真实小请求验证' : '付费小请求验证'}</button></div></div>}
         {pendingGenerationVerification && draft.adapterId !== 'mock' && <div className="verification-confirm" role="alertdialog" aria-label="确认真实小请求验证"><ShieldCheck size={20} /><div><strong>确认发起真实小请求</strong><p>{draft.adapterId === 'codex_chatgpt' ? '这会使用当前 ChatGPT 账号可用的 Codex 权益；超时不会自动重提。' : '这会调用已配置的 OpenAI-compatible 提供方，可能产生费用。'}失败时不会切换到其他通道。</p></div><div><button className="button button-secondary" type="button" onClick={() => setPendingGenerationVerification(false)}>取消</button><button className="button button-primary" type="button" onClick={() => { setPendingGenerationVerification(false); void verifyProvider(true); }}>确认验证</button></div></div>}
         <p className="form-hint">{availableDatasets.length === 0 ? '当前没有已发布数据集；请先完成样本导入和发布。' : apiMode === 'mock' && draft.adapterId !== 'mock' ? '前端 Mock 数据模式不会连接真实模型通道；请先把 VITE_API_MODE 切换为 api。' : draft.adapterId === 'codex_chatgpt' ? '登录检查不生成内容；真实小请求会使用账号可用的 Codex 权益。不会转成通用 API 余额，也不会自动改走收费 API。' : draft.adapterId === 'openai_compatible' ? '当前只支持 Chat Completions；Base URL 是 API 根（通常含 /v1）。验证请求可能产生服务商费用，凭据仅由后端读取。' : 'Mock 执行器不会发外部请求；任务执行成功后，未配置质量门仍显示“质量未评估 / 分数未知”。'}</p>
       </Dialog>

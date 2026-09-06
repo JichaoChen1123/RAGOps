@@ -41,7 +41,7 @@ SAFE_MESSAGES: dict[ModelErrorCode, str] = {
     ModelErrorCode.rate_limited: "The model provider rate-limited the request.",
     ModelErrorCode.timeout: "Model provider did not respond before the configured deadline.",
     ModelErrorCode.cancelled: "Model provider execution was cancelled.",
-    ModelErrorCode.isolation_violation: "Codex attempted a capability forbidden by the evaluation isolation policy.",
+    ModelErrorCode.isolation_violation: "Codex could not satisfy the evaluation isolation policy.",
     ModelErrorCode.transport_error: "The model provider could not be reached.",
     ModelErrorCode.server_error: "The model provider reported a server error.",
     ModelErrorCode.response_invalid: "The model provider returned an invalid response.",
@@ -215,7 +215,10 @@ class OpenAICompatibleAdapter:
                 )
                 attempt_elapsed_ms = _elapsed_ms(self.monotonic, attempt_started)
                 total_elapsed_ms = _elapsed_ms(self.monotonic, invocation_started)
-                if attempt_elapsed_ms > timeout_ms or total_elapsed_ms > self.settings.model_total_timeout_ms:
+                if (
+                    attempt_elapsed_ms > timeout_ms
+                    or total_elapsed_ms > self.settings.model_total_timeout_ms
+                ):
                     raise TimeoutError
                 parsed = self._parse_response(response, started=invocation_started)
             except TimeoutError:
@@ -253,10 +256,10 @@ class OpenAICompatibleAdapter:
                 AttemptRecord(
                     number=attempt_number,
                     status=(
-                        "timeout" if last_error.code == ModelErrorCode.timeout else (
-                            "cancelled"
-                            if last_error.code == ModelErrorCode.cancelled
-                            else "failed"
+                        "timeout"
+                        if last_error.code == ModelErrorCode.timeout
+                        else (
+                            "cancelled" if last_error.code == ModelErrorCode.cancelled else "failed"
                         )
                     ),
                     latency_ms=_elapsed_ms(self.monotonic, attempt_started),
@@ -276,9 +279,7 @@ class OpenAICompatibleAdapter:
 
     def _payload(self, request: ModelRequest) -> dict[str, object]:
         if request.context:
-            context = "\n\n".join(
-                f"[{item.position}]\n{item.text}" for item in request.context
-            )
+            context = "\n\n".join(f"[{item.position}]\n{item.text}" for item in request.context)
         else:
             context = "(none)"
         payload: dict[str, object] = {
@@ -420,9 +421,7 @@ class CodexChatGPTAdapter:
             result = ModelResponse(
                 answer=answer,
                 actual_model=(
-                    body.get("actual_model")
-                    if isinstance(body.get("actual_model"), str)
-                    else None
+                    body.get("actual_model") if isinstance(body.get("actual_model"), str) else None
                 ),
                 finish_reason=_finish_reason(body.get("finish_reason")),
                 latency_ms=(
@@ -466,9 +465,9 @@ class CodexChatGPTAdapter:
         self.last_attempts.append(
             AttemptRecord(
                 number=1,
-                status="timeout" if error.code == ModelErrorCode.timeout else (
-                    "cancelled" if error.code == ModelErrorCode.cancelled else "failed"
-                ),
+                status="timeout"
+                if error.code == ModelErrorCode.timeout
+                else ("cancelled" if error.code == ModelErrorCode.cancelled else "failed"),
                 latency_ms=_elapsed_ms(self.monotonic, started),
                 error_code=error.code,
                 retry_delay_ms=0,
@@ -492,9 +491,7 @@ class CodexChatGPTAdapter:
                 headers={
                     "accept": "application/json",
                     "content-type": "application/json",
-                    "authorization": (
-                        f"Bearer {self.config.access_token.get_secret_value()}"
-                    ),
+                    "authorization": (f"Bearer {self.config.access_token.get_secret_value()}"),
                 },
                 json_body=body,
                 timeout_ms=self.settings.model_total_timeout_ms,
@@ -614,6 +611,8 @@ def _error(
     attempts: int = 0,
     provider_request_id: str | None = None,
     retry_after_ms: int | None = None,
+    reason_code: str | None = None,
+    diagnostic_id: str | None = None,
 ) -> ModelError:
     retryable = code in {
         ModelErrorCode.rate_limited,
@@ -628,6 +627,8 @@ def _error(
         attempts=attempts,
         provider_request_id=provider_request_id,
         retry_after_ms=retry_after_ms,
+        reason_code=reason_code,
+        diagnostic_id=diagnostic_id,
     )
 
 
@@ -637,6 +638,8 @@ def _bridge_error(
     provider_request_id: str | None,
 ) -> ModelError:
     provider_code = None
+    reason_code = None
+    diagnostic_id = None
     try:
         body = json.loads(response.body)
         if isinstance(body, dict):
@@ -644,6 +647,8 @@ def _bridge_error(
             error = body.get("error")
             if isinstance(detail, dict):
                 provider_code = detail.get("code")
+                reason_code = detail.get("reason_code")
+                diagnostic_id = detail.get("diagnostic_id")
             elif isinstance(error, dict):
                 provider_code = error.get("code")
     except (UnicodeDecodeError, ValueError):
@@ -673,7 +678,12 @@ def _bridge_error(
             code = ModelErrorCode.server_error
         else:
             code = ModelErrorCode.response_invalid
-    return _error(code, provider_request_id=provider_request_id)
+    return _error(
+        code,
+        provider_request_id=provider_request_id,
+        reason_code=reason_code if isinstance(reason_code, str) else None,
+        diagnostic_id=diagnostic_id if isinstance(diagnostic_id, str) else None,
+    )
 
 
 def _bridge_usage(value: object) -> TokenUsage | None:

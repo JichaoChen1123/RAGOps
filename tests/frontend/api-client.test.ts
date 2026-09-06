@@ -291,6 +291,42 @@ describe('typed API client 2.0 semantics', () => {
     expect(diagnosis.run).toMatchObject({ latencyMs: null, usage: null, cost: null });
   });
 
+  it('preserves safe bridge diagnostics on failed sample runs', async () => {
+    const failedSample = {
+      ...rawSampleV2,
+      run: {
+        ...rawSampleV2.run,
+        status: 'failed',
+        answer: null,
+        error: {
+          code: 'isolation_violation',
+          message: 'Codex could not satisfy the evaluation isolation policy.',
+          reason_code: 'TURN_PROTOCOL_NOTIFICATION_UNRECOGNIZED',
+          diagnostic_id: 'diag-safe-456',
+          retryable: false,
+          attempts: 1,
+          provider_request_id: null,
+          retry_after_ms: null,
+        },
+      },
+    };
+    const fetcher = vi.fn(async (input: RequestInfo | URL) => {
+      const url = String(input);
+      if (url.endsWith('/report')) return jsonResponse(rawReportV2);
+      if (url.endsWith('/samples')) return jsonResponse({ items: [failedSample], total: 1 });
+      return jsonResponse(rawJobV2);
+    }) as unknown as typeof fetch;
+    const client = createApiClient({ mode: 'api', baseUrl: '/api/v1', fetcher });
+
+    const report = await client.getEvaluationReport('project-a', 'job-1');
+
+    expect(report.samples[0].error).toMatchObject({
+      code: 'isolation_violation',
+      reasonCode: 'TURN_PROTOCOL_NOTIFICATION_UNRECOGNIZED',
+      diagnosticId: 'diag-safe-456',
+    });
+  });
+
   it('maps snake_case diagnosis rules into sample details and primary-rule report buckets', async () => {
     const legacyDiagnosedSample = {
       ...rawSampleV2,
@@ -430,10 +466,15 @@ describe('typed API client 2.0 semantics', () => {
   });
 
   it('surfaces structured errors and empty responses without fixture fallback', async () => {
-    const errorFetcher = vi.fn(async () => jsonResponse({ error: { message: 'provider is not configured', code: 'PROVIDER_NOT_CONFIGURED' } }, 409)) as unknown as typeof fetch;
+    const errorFetcher = vi.fn(async () => jsonResponse({ error: {
+      message: 'provider is not configured',
+      code: 'PROVIDER_NOT_CONFIGURED',
+      details: { reason_code: 'THREAD_PERMISSION_MISMATCH', diagnostic_id: 'diag-safe-123' },
+    } }, 409)) as unknown as typeof fetch;
     const errorClient = createApiClient({ mode: 'api', baseUrl: '/api/v1', fetcher: errorFetcher });
     await expect(errorClient.createEvaluationTask('project-a', taskInput)).rejects.toMatchObject({
       message: 'provider is not configured', status: 409, code: 'PROVIDER_NOT_CONFIGURED',
+      details: { reason_code: 'THREAD_PERMISSION_MISMATCH', diagnostic_id: 'diag-safe-123' },
     } satisfies Partial<ApiError>);
 
     const emptyFetcher = vi.fn(async () => new Response('', { status: 200 })) as unknown as typeof fetch;

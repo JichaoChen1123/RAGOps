@@ -43,6 +43,7 @@ export class ApiError extends Error {
     message: string,
     readonly status?: number,
     readonly code?: string,
+    readonly details?: Record<string, unknown>,
   ) {
     super(message);
     this.name = 'ApiError';
@@ -169,12 +170,13 @@ interface RawModelExecutionStatus {
 }
 
 interface StructuredErrorPayload {
-  detail?: string | unknown[];
+  detail?: string | unknown[] | Record<string, unknown>;
   message?: string;
   code?: string;
   error?: {
     message?: string;
     code?: string;
+    details?: Record<string, unknown>;
   };
 }
 
@@ -383,6 +385,8 @@ function mapModelError(raw: Record<string, unknown> | null | undefined): ModelEr
   return {
     code,
     message: recordString(raw, 'message') ?? '执行失败，后端未返回安全说明。',
+    reasonCode: recordString(raw, 'reason_code') ?? null,
+    diagnosticId: recordString(raw, 'diagnostic_id') ?? null,
     retryable: recordBoolean(raw, 'retryable') ?? false,
     attempts: recordNumber(raw, 'attempts') ?? 0,
     providerRequestId: recordString(raw, 'provider_request_id') ?? null,
@@ -461,6 +465,8 @@ function sampleParts(raw: RawEvaluationSample) {
   const error = mapModelError(asRecord(run?.error)) ?? (raw.failure_code ? {
     code: raw.failure_code,
     message: raw.failure_message ?? '旧运行失败，未记录更多安全说明。',
+    reasonCode: null,
+    diagnosticId: null,
     retryable: false,
     attempts: 0,
     providerRequestId: null,
@@ -764,6 +770,8 @@ function mapModelExecutionStatus(raw: RawModelExecutionStatus): ModelExecutionSt
         lastVerifiedAt: recordString(item, 'last_verified_at') ?? null,
         verificationMessage: recordString(item, 'verification_message') ?? null,
         verificationErrorCode: recordString(item, 'verification_error_code') ?? null,
+        verificationReasonCode: recordString(item, 'verification_reason_code') ?? null,
+        verificationDiagnosticId: recordString(item, 'verification_diagnostic_id') ?? null,
       };
     }),
     source: 'api',
@@ -854,6 +862,8 @@ class MockApiClient implements ApiClient {
         lastVerifiedAt: null,
         verificationMessage: null,
         verificationErrorCode: null,
+        verificationReasonCode: null,
+        verificationDiagnosticId: null,
       }, {
         providerId: 'openai_compatible',
         providerName: 'OpenAI-compatible provider',
@@ -873,6 +883,8 @@ class MockApiClient implements ApiClient {
         lastVerifiedAt: null,
         verificationMessage: null,
         verificationErrorCode: null,
+        verificationReasonCode: null,
+        verificationDiagnosticId: null,
       }],
       source: 'fixture',
     });
@@ -1054,10 +1066,12 @@ class HttpApiClient implements ApiClient {
       if (!response.ok) {
         const errorPayload = payload as StructuredErrorPayload | null;
         const detail = typeof errorPayload?.detail === 'string' ? errorPayload.detail : undefined;
+        const details = asRecord(errorPayload?.error?.details) ?? asRecord(errorPayload?.detail);
         throw new ApiError(
           errorPayload?.error?.message ?? detail ?? errorPayload?.message ?? `请求失败（HTTP ${response.status}）`,
           response.status,
           errorPayload?.error?.code ?? errorPayload?.code,
+          details,
         );
       }
       if (payload === null) throw new ApiError('后端返回了空响应', response.status, 'EMPTY_RESPONSE');

@@ -65,6 +65,10 @@ const generationLabel = (value: Record<string, unknown> | undefined) => value
   ? Object.entries(value).map(([key, item]) => `${key}=${item ?? '未知'}`).join(' · ')
   : '未知';
 
+const modelErrorLabel = (error: SampleSummary['error']) => error
+  ? [error.code, error.reasonCode, error.diagnosticId ? `诊断 ID ${error.diagnosticId}` : null, error.message].filter(Boolean).join(' · ')
+  : '无';
+
 function sampleMarkdown(sample: SampleSummary): string {
   const contexts = sample.contexts.length === 0
     ? '- 上下文：无记录'
@@ -72,7 +76,7 @@ function sampleMarkdown(sample: SampleSummary): string {
   const citations = sample.citations.length === 0
     ? '- 引用：无记录'
     : sample.citations.map((citation) => `  - ${citation.marker} · resolved=${citation.resolved ?? '未知'} · supports_claim=${citation.supportsClaim ?? '未评估'} · target=${citation.targetId || '未知'}`).join('\n');
-  return `#### ${sample.sampleId}\n\n- 原始问题：${sample.question}\n- 参考答案：${sample.referenceAnswer ?? '未知'}\n- 本次回答：${sample.generatedAnswer ?? '未知'}\n- 历史回答：${sample.historicalAnswer ?? '无记录'}\n- 运行状态：${sample.runStatus}\n- 实际通道：${sample.run.adapterId ?? '未知'} / ${sample.run.providerId ?? '无或未知'}\n- 请求 / 返回模型：${sample.run.requestedModel ?? '未知'} / ${sample.run.actualModel ?? '未知'}\n- 模拟标记：${sample.run.isMock === null ? '未知' : sample.run.isMock ? '是' : '否'}\n- Usage：${sample.run.usage ? `${sample.run.usage.inputTokens} 输入 / ${sample.run.usage.outputTokens} 输出 / ${sample.run.usage.totalTokens} 总计` : '未知'}\n- Request ID：${sample.run.providerRequestId ?? '未知'}\n- 成本：${sample.run.cost === null ? '未知' : `$${sample.run.cost}`}\n- 质量状态：${sample.qualityStatus}\n- 延迟：${sample.latencyMs === null ? '未知' : `${sample.latencyMs}ms`}\n- 错误：${sample.error ? `${sample.error.code} · ${sample.error.message}` : '无'}\n\n${contexts}\n\n${citations}`;
+  return `#### ${sample.sampleId}\n\n- 原始问题：${sample.question}\n- 参考答案：${sample.referenceAnswer ?? '未知'}\n- 本次回答：${sample.generatedAnswer ?? '未知'}\n- 历史回答：${sample.historicalAnswer ?? '无记录'}\n- 运行状态：${sample.runStatus}\n- 实际通道：${sample.run.adapterId ?? '未知'} / ${sample.run.providerId ?? '无或未知'}\n- 请求 / 返回模型：${sample.run.requestedModel ?? '未知'} / ${sample.run.actualModel ?? '未知'}\n- 模拟标记：${sample.run.isMock === null ? '未知' : sample.run.isMock ? '是' : '否'}\n- Usage：${sample.run.usage ? `${sample.run.usage.inputTokens} 输入 / ${sample.run.usage.outputTokens} 输出 / ${sample.run.usage.totalTokens} 总计` : '未知'}\n- Request ID：${sample.run.providerRequestId ?? '未知'}\n- 成本：${sample.run.cost === null ? '未知' : `$${sample.run.cost}`}\n- 质量状态：${sample.qualityStatus}\n- 延迟：${sample.latencyMs === null ? '未知' : `${sample.latencyMs}ms`}\n- 错误：${modelErrorLabel(sample.error)}\n\n${contexts}\n\n${citations}`;
 }
 
 export function ReportPage() {
@@ -189,7 +193,7 @@ export function ReportPage() {
                 <td>{formatScore(sample.recallAt5, sample.recallAt5Status)}</td>
                 <td>{formatScore(sample.faithfulness, sample.faithfulnessStatus)}</td>
                 <td>{formatScore(sample.citationSupportRate, sample.citationSupportStatus)}</td>
-                <td>{sample.latencyMs === null ? '未知' : `${sample.latencyMs}ms`}{sample.error && <small className="text-critical">{sample.error.code} · {sample.error.message}</small>}</td>
+                <td>{sample.latencyMs === null ? '未知' : `${sample.latencyMs}ms`}{sample.error && <small className="text-critical">{modelErrorLabel(sample.error)}</small>}</td>
                 <td><StatusBadge value={sample.reviewStatus} /></td>
                 <td><Link aria-label={`诊断样本 ${sample.id}`} className="button button-small" to={`/projects/${projectId}/evaluations/${taskId}/samples/${sample.id}`}>诊断 <ArrowRight size={14} /></Link></td>
               </tr>

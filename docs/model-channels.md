@@ -155,7 +155,41 @@ RAGOPS_OPENAI_COMPAT_DEFAULT_MODEL=<服务商模型 ID>
 | `CODEX_CHATGPT_USAGE_LIMITED` | 账号 Codex 权益当前受限 | 等待额度恢复；不会切换到付费 API |
 | `PROVIDER_RATE_LIMITED` | 提供方限流 | 等待后重试；重试次数有上限 |
 | `PROVIDER_TIMEOUT` | 超过总超时 | 检查桥接/服务商状态，必要时调整超时 |
-| `CODEX_ISOLATION_VIOLATION` | 出现禁止的工具或指令来源 | 不接受本次答案，检查 Codex 版本和隔离配置 |
+| `CODEX_ISOLATION_VIOLATION` | 隔离证据缺失/不匹配，或出现禁止能力 | 根据界面中的 `reason_code` 和诊断 ID 查桥接日志；不接受本次答案 |
+| `CODEX_PROTOCOL_INCOMPATIBLE` | App Server 返回了当前桥接未识别的协议事件 | 根据 `TURN_PROTOCOL_NOTIFICATION_UNRECOGNIZED` 及诊断 ID 核对本机 Schema；不要按工具违规处理 |
+
+### 隔离诊断
+
+桥接日志中的 `codex_bridge.protocol_stopped` 只记录诊断 ID、错误码、`reason_code`、协议 method、item 类型、阶段和必要关联 ID。它不会记录令牌、账号认证响应、Prompt、上下文、参考答案或推理内容。
+
+主要原因码：
+
+| `reason_code` | 含义 |
+| --- | --- |
+| `RPC_SERVER_REQUEST_DURING_RESPONSE` | 等待普通 RPC 响应时收到服务器反向请求 |
+| `RPC_SERVER_REQUEST_DURING_TURN` | 生成期间收到服务器反向请求 |
+| `THREAD_RESPONSE_FIELD_MISSING` | `thread/start` 缺少基础响应字段 |
+| `THREAD_RESPONSE_FIELD_INVALID` | `thread/start` 基础响应字段类型错误 |
+| `THREAD_SAFETY_FIELD_MISSING` | 无法获得必须验证的隔离字段 |
+| `THREAD_SAFETY_FIELD_INVALID` | 隔离字段类型不符合协议 |
+| `THREAD_DIRECTORY_INVALID` / `THREAD_DIRECTORY_MISMATCH` | 隔离目录无效或与临时目录不一致；日志只记录是否匹配 |
+| `THREAD_PERMISSION_MISMATCH` | 审批、沙箱、网络或 ephemeral 权限不符合要求 |
+| `THREAD_INSTRUCTION_SOURCES_PRESENT` | App Server 实际加载了额外指令文件 |
+| `THREAD_MODEL_MISMATCH` | 实际线程模型与请求模型不一致，禁止自动回退 |
+| `THREAD_ID_MISSING` | `thread/start` 未返回可关联的线程 ID |
+| `TURN_FORBIDDEN_ITEM_TYPE` / `TURN_FORBIDDEN_METHOD` | 检测到命令、文件、联网、MCP 等禁止能力 |
+| `TURN_PROTOCOL_NOTIFICATION_UNRECOGNIZED` | 未知通知；保持停止，但不宣称已调用工具 |
+
+升级 Codex 后可在 Windows PowerShell 生成本机版本的官方协议 Schema：
+
+```powershell
+$schemaDir = Join-Path $env:TEMP "ragops-codex-schema"
+New-Item -ItemType Directory -Path $schemaDir -Force | Out-Null
+codex app-server generate-json-schema --experimental --out $schemaDir
+Get-ChildItem -LiteralPath $schemaDir
+```
+
+当前实现按 `codex-cli 0.153.4` Schema 核对了 `ThreadStartResponse` 和 `ServerNotification`。已确认 `configWarning` 是无执行副作用的配置通知并显式忽略；其他未知事件仍 fail-closed。
 
 ## 恢复 mock
 

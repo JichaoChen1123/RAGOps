@@ -129,6 +129,8 @@ class ModelError(Exception):
         attempts: int = 0,
         provider_request_id: str | None = None,
         retry_after_ms: int | None = None,
+        reason_code: str | None = None,
+        diagnostic_id: str | None = None,
     ) -> None:
         super().__init__(message)
         self.code = code
@@ -137,6 +139,8 @@ class ModelError(Exception):
         self.attempts = attempts
         self.provider_request_id = provider_request_id
         self.retry_after_ms = retry_after_ms
+        self.reason_code = reason_code
+        self.diagnostic_id = diagnostic_id
 
     def as_dict(self) -> dict[str, object]:
         return {
@@ -146,6 +150,8 @@ class ModelError(Exception):
             "attempts": self.attempts,
             "provider_request_id": self.provider_request_id,
             "retry_after_ms": self.retry_after_ms,
+            "reason_code": self.reason_code,
+            "diagnostic_id": self.diagnostic_id,
         }
 
 

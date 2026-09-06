@@ -27,7 +27,7 @@ export function SampleStack({ samples, projectId, taskId }: { samples: SampleSum
       <div><dt>忠实性</dt><dd>{formatScore(sample.faithfulness, sample.faithfulnessStatus)}</dd></div>
       <div><dt>引用支持</dt><dd>{formatScore(sample.citationSupportRate, sample.citationSupportStatus)}</dd></div>
     </dl>
-    {sample.error && <p className="text-critical">{sample.error.code} · {sample.error.message}</p>}
+    {sample.error && <p className="text-critical">{sample.error.code}{sample.error.reasonCode ? ` · ${sample.error.reasonCode}` : ''}{sample.error.diagnosticId ? ` · 诊断 ID ${sample.error.diagnosticId}` : ''} · {sample.error.message}</p>}
     <footer className="record-footer"><span>{sample.contexts.length} 条上下文 · {sample.citations.length} 条引用</span><Link aria-label={`诊断样本 ${sample.id}`} className="button button-secondary" to={`/projects/${projectId}/evaluations/${taskId}/samples/${sample.id}`}>诊断 <ArrowRight size={16} /></Link></footer>
   </>} />;
 }

@@ -128,9 +128,7 @@ def emit_turn() -> None:
             "params": {
                 "threadId": thread_id,
                 "turnId": turn_id,
-                "tokenUsage": {
-                    "last": {"inputTokens": 11, "outputTokens": 4, "totalTokens": 15}
-                },
+                "tokenUsage": {"last": {"inputTokens": 11, "outputTokens": 4, "totalTokens": 15}},
             },
         }
     )
@@ -214,6 +212,9 @@ def main() -> None:
         elif method == "thread/start":
             if not hardening_is_valid(params):
                 rpc_error(request_id)
+                continue
+            if SCENARIO == "server_request_during_response":
+                emit({"id": 901, "method": "tool/call", "params": {"command": "must-not-log"}})
                 continue
             instruction_sources = ["AGENTS.md"] if SCENARIO == "instructions" else []
             respond(
