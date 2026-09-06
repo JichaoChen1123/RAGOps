@@ -250,7 +250,13 @@ describe('typed API client 2.0 semantics', () => {
         capabilities: { external_network: false, supports_seed: true, supports_stop: true, reports_usage: false, reports_request_id: false },
       },
       providers: [{
-        provider_id: 'openai_compatible', configuration_status: 'configured_unverified', base_url_configured: true,
+        adapter_id: 'codex_chatgpt', provider_id: 'codex_chatgpt', configuration_status: 'verified', base_url_configured: true,
+        credential_configured: true, default_model_configured: true, login_status: 'logged_in',
+        last_connection_check: { status: 'succeeded', checked_at: '2026-09-06T00:00:00Z' },
+        real_generation_verified: false, last_generation_verified_at: null, codex_version: 'codex-test-version',
+        available_models: [{ id: 'gpt-codex-test' }], quota: null,
+      }, {
+        adapter_id: 'openai_compatible', provider_id: 'openai_compatible', configuration_status: 'configured_unverified', base_url_configured: true,
         credential_configured: true, default_model_configured: true, last_verified_at: null, verification_message: null,
       }],
     })) as unknown as typeof fetch;
@@ -259,7 +265,32 @@ describe('typed API client 2.0 semantics', () => {
     const status = await client.getModelExecutionStatus();
 
     expect(status).toMatchObject({ source: 'api', backendExecutionAdapter: 'mock', externalCallsEnabled: false });
-    expect(status.providers[0]).toMatchObject({ configurationStatus: 'configured_unverified', lastVerifiedAt: null });
+    expect(status.providers[0]).toMatchObject({
+      adapterId: 'codex_chatgpt', configurationStatus: 'verified', loginStatus: 'logged_in',
+      lastConnectionCheckStatus: 'succeeded', realGenerationVerified: false,
+      codexVersion: 'codex-test-version', availableModels: ['gpt-codex-test'], quota: null,
+    });
+    expect(status.providers[1]).toMatchObject({ configurationStatus: 'configured_unverified', loginStatus: 'unknown', availableModels: null });
+  });
+
+  it('uses the explicit verification endpoint without credentials or implicit generation', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      adapter_id: 'codex_chatgpt', check_type: 'login', status: 'succeeded',
+      checked_at: '2026-09-06T00:00:00Z', message: 'ChatGPT login is active.', model: null,
+      usage: null, request_id: null,
+    })) as unknown as typeof fetch;
+    const client = createApiClient({ mode: 'api', baseUrl: '/api/v1', fetcher });
+
+    const result = await client.verifyModelExecution({ adapterId: 'codex_chatgpt', check: 'login' });
+
+    expect(result).toMatchObject({ adapterId: 'codex_chatgpt', check: 'login', status: 'succeeded', usage: null });
+    expect(fetcher).toHaveBeenCalledWith('/api/v1/model-execution/verify', expect.objectContaining({
+      method: 'POST', body: JSON.stringify({ adapter_id: 'codex_chatgpt', check_type: 'login' }),
+    }));
+    const body = JSON.parse((vi.mocked(fetcher).mock.calls[0][1] as RequestInit).body as string);
+    expect(body).not.toHaveProperty('model');
+    expect(body).not.toHaveProperty('token');
+    expect(body).not.toHaveProperty('api_key');
   });
 
   it('keeps successful execution separate from unknown quality and preserves citation semantics', async () => {
@@ -285,6 +316,10 @@ describe('typed API client 2.0 semantics', () => {
     expect(diagnosis.citations[0]).toMatchObject({ resolved: true, supportsClaim: null });
     expect(diagnosis.metrics.find((metric) => metric.key === 'citation_support_rate')).toMatchObject({ status: 'not_evaluated', value: null });
     expect(diagnosis.run).toMatchObject({ latencyMs: null, usage: null, cost: null });
+    expect(report.samples[0].run).toMatchObject({
+      adapterId: 'mock', requestedModel: 'mock-ragops-v1', actualModel: 'mock-ragops-v1',
+      isMock: true, usage: null, providerRequestId: null, cost: null,
+    });
   });
 
   it('maps snake_case diagnosis rules into sample details and primary-rule report buckets', async () => {
@@ -389,6 +424,20 @@ describe('typed API client 2.0 semantics', () => {
     }));
     expect(body).not.toHaveProperty('model_version');
     expect(body).not.toHaveProperty('prompt_version');
+  });
+
+  it('serializes mock, Codex ChatGPT and OpenAI-compatible as distinct task channels', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ ...rawJobV2, status: 'queued', outcome: null, progress: 0 })) as unknown as typeof fetch;
+    const client = createApiClient({ mode: 'api', baseUrl: '/api/v1', fetcher });
+
+    await client.createEvaluationTask('project-a', taskInput);
+    await client.createEvaluationTask('project-a', { ...taskInput, adapterId: 'codex_chatgpt', generation: { ...taskInput.generation, model: 'gpt-codex-test' } });
+    await client.createEvaluationTask('project-a', { ...taskInput, adapterId: 'openai_compatible', generation: { ...taskInput.generation, model: 'provider-model' } });
+
+    const bodies = vi.mocked(fetcher).mock.calls.map((call) => JSON.parse((call[1] as RequestInit).body as string));
+    expect(bodies.map((body) => body.execution.adapter_id)).toEqual(['mock', 'codex_chatgpt', 'openai_compatible']);
+    expect(bodies[1].execution.generation).toEqual({ model: 'gpt-codex-test' });
+    expect(bodies[2].execution.generation).toMatchObject({ model: 'provider-model', temperature: 0, top_p: 1, max_output_tokens: 512 });
   });
 
   it('surfaces structured errors and empty responses without fixture fallback', async () => {

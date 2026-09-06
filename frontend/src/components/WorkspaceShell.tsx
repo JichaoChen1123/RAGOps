@@ -1,7 +1,6 @@
 import {
   Activity,
   BarChart3,
-  Bot,
   Boxes,
   ChevronDown,
   CircleHelp,
@@ -14,15 +13,14 @@ import {
   PanelLeftOpen,
   Search,
   Settings,
-  SlidersHorizontal,
   X,
 } from 'lucide-react';
-import { useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, NavLink, Outlet, useLocation, useParams, useSearchParams } from 'react-router-dom';
 import { apiClient, apiMode } from '../api/client';
-import type { ModelExecutionStatus, ViewScenario } from '../types';
+import type { ViewScenario } from '../types';
 import { Dialog, Toast } from './Interaction';
-import { StatusBadge } from './StatusBadge';
+import { ModelExecutionDialog, type RuntimeStatusView } from './ModelExecutionDialog';
 
 const scenarioLabels: Record<ViewScenario, string> = {
   normal: '正常数据',
@@ -57,9 +55,7 @@ export function WorkspaceShell() {
   const [helpOpen, setHelpOpen] = useState(false);
   const [roadmapOpen, setRoadmapOpen] = useState(false);
   const [configurationOpen, setConfigurationOpen] = useState(false);
-  const [runtimeStatus, setRuntimeStatus] = useState<
-    { state: 'loading' } | { state: 'success'; data: ModelExecutionStatus } | { state: 'error'; message: string }
-  >({ state: 'loading' });
+  const [runtimeStatus, setRuntimeStatus] = useState<RuntimeStatusView>({ state: 'loading' });
   const [searchQuery, setSearchQuery] = useState('');
   const [feedback, setFeedback] = useState<string | null>(null);
   const scenario = (searchParams.get('state') as ViewScenario | null) ?? 'normal';
@@ -94,16 +90,16 @@ export function WorkspaceShell() {
     return () => window.removeEventListener('keydown', openCommandSearch);
   }, []);
 
-  useEffect(() => {
-    let active = true;
+  const loadRuntimeStatus = useCallback(async () => {
     setRuntimeStatus({ state: 'loading' });
-    void apiClient.getModelExecutionStatus().then((data) => {
-      if (active) setRuntimeStatus({ state: 'success', data });
-    }).catch((error: unknown) => {
-      if (active) setRuntimeStatus({ state: 'error', message: error instanceof Error ? error.message : '状态 API 请求失败' });
-    });
-    return () => { active = false; };
+    try {
+      setRuntimeStatus({ state: 'success', data: await apiClient.getModelExecutionStatus() });
+    } catch (error) {
+      setRuntimeStatus({ state: 'error', message: error instanceof Error ? error.message : '状态 API 请求失败' });
+    }
   }, []);
+
+  useEffect(() => { void loadRuntimeStatus(); }, [loadRuntimeStatus]);
 
   const changeScenario = (next: ViewScenario) => {
     const params = new URLSearchParams(searchParams);
@@ -115,7 +111,10 @@ export function WorkspaceShell() {
   const preserveState = (path: string) => scenario === 'normal' ? path : `${path}?state=${scenario}`;
   const matchedTargets = useMemo(() => searchTargets.filter((target) =>
     `${target.label} ${target.description}`.toLowerCase().includes(searchQuery.trim().toLowerCase())), [searchQuery]);
-  const providerStatus = runtimeStatus.state === 'success' ? runtimeStatus.data.providers[0] : undefined;
+  const providerStatus = runtimeStatus.state === 'success'
+    ? runtimeStatus.data.providers.find((provider) => provider.adapterId === runtimeStatus.data.backendExecutionAdapter)
+      ?? runtimeStatus.data.providers[0]
+    : undefined;
   const backendAdapterLabel = runtimeStatus.state === 'success'
     ? runtimeStatus.data.backendExecutionAdapter ?? '未知'
     : runtimeStatus.state === 'loading' ? '读取中' : '未知';
@@ -246,7 +245,7 @@ export function WorkspaceShell() {
           <div><strong>2. 发起评测</strong><p>显式选择执行器；不可用方式由后端拒绝，不会回退到 Mock。</p></div>
           <div><strong>3. 定位故障</strong><p>从完成任务进入报告，再下钻失败样本核对检索证据与引用。</p></div>
         </div>
-        <p className="form-hint">顶部同时展示前端数据源、后端执行器和提供方配置状态。API 数据不等于模型已连接；本阶段没有真实连接验证按钮。</p>
+        <p className="form-hint">顶部同时展示前端数据源、后端执行通道和提供方配置状态。API 数据不等于模型已连接；登录检查不生成，真实小请求检查只会在二次确认后执行。</p>
       </Dialog>
       <Dialog open={roadmapOpen} title="版本对比 · 下一阶段" eyebrow="ROADMAP / PHASE 2" onClose={() => setRoadmapOpen(false)}>
         <div className="availability-card">
@@ -259,16 +258,7 @@ export function WorkspaceShell() {
           <div><span>03</span><strong>故障差异</strong><small>Diagnosis diff / Evidence trace</small></div>
         </div>
       </Dialog>
-      <Dialog open={configurationOpen} title="模型与 Prompt · 只读快照" eyebrow="ACTIVE EVALUATION CONTEXT" onClose={() => setConfigurationOpen(false)}>
-        <div className="configuration-snapshot">
-          <div><Database size={16} /><span><small>FRONTEND DATA SOURCE</small><strong>{apiMode === 'mock' ? 'Mock fixture（浏览器内存）' : 'RAGOps API（仅表示连接项目后端）'}</strong></span><i>{apiMode.toUpperCase()}</i></div>
-          <div><Bot size={16} /><span><small>BACKEND EXECUTION ADAPTER</small><strong>{backendAdapterLabel}</strong></span><i>{runtimeStatus.state === 'success' && runtimeStatus.data.activeAdapter?.isMock ? 'MOCK' : 'READ ONLY'}</i></div>
-          <div><SlidersHorizontal size={16} /><span><small>PROVIDER CONFIGURATION</small><strong>{providerStatus?.providerId ?? '提供方未知'} · {providerLabel}</strong></span>{providerStatus ? <StatusBadge value={providerStatus.configurationStatus} /> : <i>UNKNOWN</i>}</div>
-        </div>
-        {runtimeStatus.state === 'error' && <p className="form-hint">状态 API 读取失败：{runtimeStatus.message}。前端不会据此猜测执行器或提供方已连接。</p>}
-        {runtimeStatus.state === 'success' && <dl className="detail-list runtime-detail"><div><dt>外部调用总开关</dt><dd>{runtimeStatus.data.externalCallsEnabled === null ? '未知' : runtimeStatus.data.externalCallsEnabled ? '已开启' : '已关闭'}</dd></div><div><dt>执行可用</dt><dd>{runtimeStatus.data.executionAvailable === null ? '未知' : runtimeStatus.data.executionAvailable ? '是' : '否'}</dd></div><div><dt>状态来源</dt><dd>{runtimeStatus.data.source === 'fixture' ? '前端模拟状态 fixture' : '后端状态 API（无提供方探测）'}</dd></div></dl>}
-        <p className="form-hint">配置完整只表示“已配置但未验证”。本阶段不提供真实验证入口，也不会从浏览器发送凭据或提供方探测请求。</p>
-      </Dialog>
+      <ModelExecutionDialog open={configurationOpen} runtimeStatus={runtimeStatus} backendAdapterLabel={backendAdapterLabel} onClose={() => setConfigurationOpen(false)} onRefresh={loadRuntimeStatus} />
       <Toast message={feedback} onDismiss={() => setFeedback(null)} />
     </div>
   );

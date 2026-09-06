@@ -181,6 +181,7 @@ td .status-badge { white-space: nowrap; }
 .summary-strip>div:last-child, .runtime-context>div:last-child { border-right: 0; }
 .summary-strip>div>span { display: block; color: var(--muted); font-size: 12px; }
 .summary-strip>div>strong { font-size: 26px; display: block; margin-top: 6px; }
+.summary-strip>div>small { display: block; color: var(--muted); font-size: 11px; margin-top: 4px; }
 .runtime-context>div { display: flex; align-items: center; gap: 10px; }
 .runtime-context>div:first-child, .runtime-context>div>span:not(.runtime-signal) { display: flex; flex-direction: column; align-items: flex-start; gap: 4px; }
 .runtime-context small { color: var(--muted); font-size: 11px; }
@@ -386,6 +387,22 @@ td .status-badge { white-space: nowrap; }
 .configuration-snapshot strong { font-size: 13px; }
 .configuration-snapshot i { color: var(--muted); font-size: 10px; font-style: normal; }
 .runtime-detail { margin-top: 16px; }
+.provider-status-list { display: grid; gap: 18px; margin-top: 22px; }
+.provider-status-card { padding: 18px 20px; border: 1px solid var(--line); border-radius: 18px; box-shadow: var(--pressed); }
+.provider-status-card>header { display: flex; align-items: start; justify-content: space-between; gap: 16px; margin-bottom: 8px; }
+.provider-status-card h3 { margin: 4px 0 0; font-size: 18px; }
+.provider-status-card .detail-list { display: grid; grid-template-columns: 1fr 1fr; column-gap: 24px; }
+.provider-message { color: var(--muted); font-size: 12px; }
+.provider-actions { display: flex; flex-wrap: wrap; gap: 12px; margin-top: 16px; }
+.verification-confirm { display: grid; grid-template-columns: 24px minmax(0, 1fr) auto; align-items: center; gap: 14px; padding: 18px; margin-top: 20px; border-radius: 16px; background: var(--surface-light); color: var(--amber); }
+.verification-confirm p { margin: 6px 0 0; font-size: 12px; }
+.verification-confirm>div:last-child { display: flex; gap: 10px; }
+.verification-result { padding: 14px 16px; margin-top: 18px; border-radius: 14px; background: var(--surface-light); color: var(--ink); box-shadow: var(--pressed); }
+.task-channel-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; padding: 16px; border-radius: 16px; box-shadow: var(--pressed); }
+.task-channel-summary span { display: grid; gap: 6px; min-width: 0; }
+.task-channel-summary small { color: var(--muted); }
+.task-channel-summary strong { overflow-wrap: anywhere; font-size: 12px; }
+.sample-run-trace { grid-template-columns: repeat(2, minmax(0, 1fr)); padding: 14px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .compare-summary { display: grid; grid-template-columns: minmax(0, 1fr) 24px minmax(0, 1fr); gap: 20px; align-items: center; }
 .compare-summary>div { display: grid; gap: 12px; }
 .compare-summary span, .compare-summary small { color: var(--muted); font-size: 12px; }
@@ -543,6 +560,10 @@ td .status-badge { white-space: nowrap; }
   .form-grid, .help-grid, .roadmap-list, .export-options { grid-template-columns: 1fr; }
   .configuration-snapshot>div { grid-template-columns: 20px minmax(0, 1fr); }
   .configuration-snapshot i, .configuration-snapshot .status-badge { grid-column: 2; justify-self: start; }
+  .provider-status-card .detail-list, .task-channel-summary { grid-template-columns: 1fr; }
+  .provider-actions .button { width: 100%; justify-content: center; }
+  .verification-confirm { grid-template-columns: 24px minmax(0, 1fr); }
+  .verification-confirm>div:last-child { grid-column: 2; }
   .compare-summary { grid-template-columns: 1fr; }
   .toast { bottom: 16px; right: 16px; max-width: calc(100vw - 32px); padding: 12px 16px; }
   .technical-heading { flex-direction: column; }

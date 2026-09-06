@@ -9,6 +9,10 @@ export type ViewScenario = 'normal' | 'loading' | 'empty' | 'error' | 'partial';
 export type SampleReviewStatus = 'pending' | 'confirmed' | 'dismissed';
 export type ContextOrigin = 'provided' | 'retrieved' | 'legacy_unknown';
 export type ProviderConfigurationStatus = 'not_configured' | 'configured_unverified' | 'verified' | 'unknown';
+export type ExecutionAdapterId = 'mock' | 'codex_chatgpt' | 'openai_compatible';
+export type ProviderLoginStatus = 'logged_in' | 'logged_out' | 'expired' | 'not_applicable' | 'unknown';
+export type ConnectionCheckStatus = 'not_checked' | 'succeeded' | 'failed' | 'unknown';
+export type VerificationCheck = 'login' | 'generation';
 
 export interface MetricValue {
   key: string;
@@ -222,6 +226,7 @@ export interface SampleSummary {
   citations: CitationEvidence[];
   error: ModelErrorSummary | null;
   isMock: boolean | null;
+  run: SampleRunDetail;
 }
 
 export interface DatasetSampleLabelsInput {
@@ -276,7 +281,7 @@ export interface DatasetImportResult {
 export interface EvaluationTaskCreateInput {
   datasetId: string;
   name?: string;
-  adapterId: 'mock' | 'openai_compatible';
+  adapterId: ExecutionAdapterId;
   prompt: PromptSnapshot;
   generation: GenerationConfig;
   contextPolicy: 'dataset_contexts' | 'none' | 'retrieval';
@@ -349,6 +354,7 @@ export interface AdapterCapabilities {
 }
 
 export interface ProviderStatus {
+  adapterId: ExecutionAdapterId | string | null;
   providerId: string | null;
   configurationStatus: ProviderConfigurationStatus;
   baseUrlConfigured: boolean | null;
@@ -356,6 +362,31 @@ export interface ProviderStatus {
   defaultModelConfigured: boolean | null;
   lastVerifiedAt: string | null;
   verificationMessage: string | null;
+  loginStatus: ProviderLoginStatus;
+  lastConnectionCheckAt: string | null;
+  lastConnectionCheckStatus: ConnectionCheckStatus;
+  realGenerationVerified: boolean | null;
+  lastGenerationVerifiedAt: string | null;
+  codexVersion: string | null;
+  availableModels: string[] | null;
+  quota: {
+    remaining: number | null;
+    limit: number | null;
+    unit: string | null;
+    resetsAt: string | null;
+    message: string | null;
+  } | null;
+}
+
+export interface ModelExecutionVerification {
+  adapterId: ExecutionAdapterId | string;
+  check: VerificationCheck;
+  status: 'succeeded' | 'failed';
+  checkedAt: string | null;
+  message: string;
+  model: string | null;
+  usage: { inputTokens: number; outputTokens: number; totalTokens: number } | null;
+  requestId: string | null;
 }
 
 export interface ModelExecutionStatus {
@@ -375,6 +406,7 @@ export interface ModelExecutionStatus {
 export interface ApiClient {
   getProjectOverview(projectId: string): Promise<ProjectOverview>;
   getModelExecutionStatus(): Promise<ModelExecutionStatus>;
+  verifyModelExecution(input: { adapterId: Exclude<ExecutionAdapterId, 'mock'>; check: VerificationCheck; model?: string }): Promise<ModelExecutionVerification>;
   listDatasets(projectId: string): Promise<Dataset[]>;
   createDataset(projectId: string, input: DatasetCreateInput): Promise<Dataset>;
   importDatasetSamples(projectId: string, datasetId: string, samples: DatasetSampleInput[]): Promise<DatasetImportResult>;

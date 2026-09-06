@@ -4,6 +4,9 @@ import type { MetricValue } from '../types';
 
 export function MetricCard({ metric, compact = false }: { metric: MetricValue; compact?: boolean }) {
   const isUnavailable = metric.value === null;
+  const evaluatedCount = metric.evaluatedCount ?? null;
+  const excludedCount = metric.excludedCount ?? null;
+  const scopedTotal = evaluatedCount !== null && excludedCount !== null ? evaluatedCount + excludedCount : null;
   const reachedThreshold = typeof metric.value === 'number' && metric.status === 'ok' && metric.threshold !== undefined
     ? metric.direction === 'lower'
       ? metric.value <= metric.threshold
@@ -25,7 +28,9 @@ export function MetricCard({ metric, compact = false }: { metric: MetricValue; c
         {formatMetric(metric.value, metric.unit, metric.status)}
       </div>
       <div className="metric-meta">
-        {metric.delta !== undefined && metric.delta !== null ? (
+        {scopedTotal !== null && scopedTotal > 0 ? (
+          <span>{evaluatedCount === scopedTotal ? `已评 ${evaluatedCount} 个样本` : `已评 ${evaluatedCount} / ${scopedTotal} 个样本（非整批）`}</span>
+        ) : metric.delta !== undefined && metric.delta !== null ? (
           <span className={metric.delta >= 0 ? 'delta-up' : 'delta-down'}>
             {metric.delta >= 0 ? <ArrowUpRight size={14} /> : <ArrowDownRight size={14} />}
             {Math.abs(metric.delta).toFixed(1)}% 较上次
