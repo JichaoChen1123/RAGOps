@@ -276,7 +276,9 @@ def test_codex_thread_validation_fails_closed(tmp_path: Path) -> None:
             sandbox=sandbox,
             requested_model="requested-model",
         )
-    assert incompatible.value.code == "CODEX_PROTOCOL_INCOMPATIBLE"
+    assert incompatible.value.code == "CODEX_ISOLATION_VIOLATION"
+    assert incompatible.value.reason_code == "THREAD_SAFETY_FIELD_MISSING"
+    assert incompatible.value.diagnostics["field"] == "sandbox"
 
     for override in (
         {"instructionSources": ["AGENTS.md"]},
@@ -301,6 +303,7 @@ def test_codex_thread_validation_fails_closed(tmp_path: Path) -> None:
             requested_model="requested-model",
         )
     assert invalid.value.code == "CODEX_RESPONSE_INVALID"
+    assert invalid.value.reason_code == "THREAD_ID_MISSING"
 
 
 def test_codex_prompt_contains_only_the_fixed_request_contract() -> None:

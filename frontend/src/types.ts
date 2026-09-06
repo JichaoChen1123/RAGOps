@@ -168,6 +168,8 @@ export interface EvaluationReport {
 export interface ModelErrorSummary {
   code: string;
   message: string;
+  reasonCode: string | null;
+  diagnosticId: string | null;
   retryable: boolean;
   attempts: number;
   providerRequestId: string | null;
@@ -378,6 +380,8 @@ export interface ProviderStatus {
   lastVerifiedAt: string | null;
   verificationMessage: string | null;
   verificationErrorCode: string | null;
+  verificationReasonCode: string | null;
+  verificationDiagnosticId: string | null;
 }
 
 export interface ProviderVerificationResult {

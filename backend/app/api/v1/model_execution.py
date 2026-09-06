@@ -101,9 +101,7 @@ def verify_provider(
         if provider_id == "codex_chatgpt":
             assert isinstance(adapter, CodexChatGPTAdapter)
             inspected = adapter.inspect()
-            authentication_status = str(
-                inspected.get("authentication_status", "unknown")
-            )
+            authentication_status = str(inspected.get("authentication_status", "unknown"))
             if authentication_status == "not_authenticated":
                 raise _model_error(ModelErrorCode.not_authenticated)
             if authentication_status == "wrong_auth_mode":
@@ -188,6 +186,8 @@ def verify_provider(
             "checked_at": checked_at.isoformat(),
             "message": exc.message,
             "error_code": exc.code.value,
+            "reason_code": exc.reason_code,
+            "diagnostic_id": exc.diagnostic_id,
         }
         raise _domain_error(exc) from None
     request.app.state.provider_verifications[provider_id] = result.model_dump(mode="json")
@@ -228,12 +228,12 @@ def _provider_status(
         "models": verification.get("models", []) if verification else [],
         "rate_limits": verification.get("rate_limits") if verification else None,
         "codex_version": verification.get("codex_version") if verification else None,
-        "protocol_compatible": (
-            verification.get("protocol_compatible") if verification else None
-        ),
+        "protocol_compatible": (verification.get("protocol_compatible") if verification else None),
         "last_verified_at": verification.get("checked_at") if verification else None,
         "verification_message": verification.get("message") if verification else None,
         "verification_error_code": verification.get("error_code") if verification else None,
+        "verification_reason_code": verification.get("reason_code") if verification else None,
+        "verification_diagnostic_id": (verification.get("diagnostic_id") if verification else None),
     }
 
 
@@ -313,5 +313,13 @@ def _domain_error(error: ModelError) -> DomainError:
         error.code.value,
         error.message,
         status_code=status_by_code.get(error.code, status.HTTP_502_BAD_GATEWAY),
+        details={
+            key: value
+            for key, value in {
+                "reason_code": error.reason_code,
+                "diagnostic_id": error.diagnostic_id,
+            }.items()
+            if value is not None
+        },
         retryable=error.retryable,
     )

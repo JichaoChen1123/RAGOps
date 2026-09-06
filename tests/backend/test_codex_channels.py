@@ -187,7 +187,10 @@ def test_codex_errors_are_safe_and_never_retried(
 
 @pytest.mark.parametrize(
     ("failure", "expected"),
-    [(TimeoutError(), ModelErrorCode.timeout), (ConnectionError(), ModelErrorCode.transport_error)],
+    [
+        (TimeoutError(), ModelErrorCode.timeout),
+        (ConnectionError(), ModelErrorCode.transport_error),
+    ],
 )
 def test_codex_status_transport_errors_are_normalized(
     failure: Exception, expected: ModelErrorCode
@@ -276,7 +279,9 @@ class RunnerSpy:
         }
 
 
-def test_bridge_requires_auth_and_rejects_arbitrary_execution_fields(tmp_path: Path) -> None:
+def test_bridge_requires_auth_and_rejects_arbitrary_execution_fields(
+    tmp_path: Path,
+) -> None:
     runner = RunnerSpy()
     config = BridgeConfig(access_token="b" * 32, sandbox_root=tmp_path)
     with TestClient(create_bridge_app(config, runner_factory=lambda: runner)) as client:
@@ -331,12 +336,22 @@ def test_bridge_requires_auth_and_rejects_arbitrary_execution_fields(tmp_path: P
 
 
 class FakeRpc:
-    def __init__(self, serial: int, cwd: Path, *, tool_event: bool = False) -> None:
+    def __init__(
+        self,
+        serial: int,
+        cwd: Path,
+        *,
+        tool_event: bool = False,
+        unknown_event: bool = False,
+        config_warning: bool = False,
+        thread_variant: str = "normal",
+    ) -> None:
         self.serial = serial
         self.cwd = cwd
         self.thread_id = f"thread-{serial}"
         self.turn_id = f"turn-{serial}"
         self.tool_event = tool_event
+        self.thread_variant = thread_variant
         self.requests: list[tuple[str, dict[str, Any] | None]] = []
         self.interrupted = False
         item = (
@@ -385,6 +400,22 @@ class FakeRpc:
                 },
             },
         ]
+        if unknown_event:
+            self.notifications.insert(
+                0,
+                {
+                    "method": "future/safeStatus",
+                    "params": {"threadId": self.thread_id, "turnId": self.turn_id},
+                },
+            )
+        if config_warning:
+            self.notifications.insert(
+                0,
+                {
+                    "method": "configWarning",
+                    "params": {"message": "safe protocol warning"},
+                },
+            )
 
     def __enter__(self) -> FakeRpc:
         return self
@@ -428,7 +459,7 @@ class FakeRpc:
         if method == "account/rateLimits/read":
             return {"rateLimits": {"primary": {"usedPercent": 12}}}
         if method == "thread/start":
-            return {
+            response = {
                 "thread": {
                     "id": self.thread_id,
                     "cwd": str(self.cwd),
@@ -440,6 +471,15 @@ class FakeRpc:
                 "sandbox": {"type": "readOnly", "networkAccess": False},
                 "instructionSources": [],
             }
+            if self.thread_variant == "missing_network_access":
+                response["sandbox"].pop("networkAccess")
+            elif self.thread_variant == "invalid_sandbox":
+                response["sandbox"] = "must not be logged"
+            elif self.thread_variant == "permission_mismatch":
+                response["sandbox"]["type"] = "workspaceWrite"
+            elif self.thread_variant == "instructions":
+                response["instructionSources"] = ["must-not-be-logged/AGENTS.md"]
+            return response
         if method == "turn/start":
             return {"turn": {"id": self.turn_id}}
         raise AssertionError(f"Unexpected RPC method: {method}")
@@ -453,8 +493,18 @@ class FakeRpc:
 
 
 class FakeConnectionFactory:
-    def __init__(self, *, tool_event: bool = False) -> None:
+    def __init__(
+        self,
+        *,
+        tool_event: bool = False,
+        unknown_event: bool = False,
+        config_warning: bool = False,
+        thread_variant: str = "normal",
+    ) -> None:
         self.tool_event = tool_event
+        self.unknown_event = unknown_event
+        self.config_warning = config_warning
+        self.thread_variant = thread_variant
         self.instances: list[FakeRpc] = []
 
     def __call__(self, **kwargs: object) -> FakeRpc:
@@ -462,6 +512,9 @@ class FakeConnectionFactory:
             len(self.instances) + 1,
             Path(str(kwargs["cwd"])),
             tool_event=self.tool_event,
+            unknown_event=self.unknown_event,
+            config_warning=self.config_warning,
+            thread_variant=self.thread_variant,
         )
         self.instances.append(rpc)
         return rpc
@@ -510,13 +563,18 @@ def test_protocol_inspection_is_safe_and_generation_uses_fresh_restricted_thread
         assert thread_params["dynamicTools"] == []
         assert thread_params["environments"] == []
         assert thread_params["config"] == {"mcp_servers": {}, "web_search": "disabled"}
-        assert turn_params["sandboxPolicy"] == {"type": "readOnly", "networkAccess": False}
+        assert turn_params["sandboxPolicy"] == {
+            "type": "readOnly",
+            "networkAccess": False,
+        }
         serialized_turn = json.dumps(turn_params)
         assert "reference_answer" not in serialized_turn
         assert "labels" not in serialized_turn
 
 
-def test_protocol_rejects_tool_activity_and_interrupts_turn(tmp_path: Path) -> None:
+def test_protocol_rejects_tool_activity_and_interrupts_turn(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
     factory = FakeConnectionFactory(tool_event=True)
     runner = _runner(tmp_path, factory)
 
@@ -524,16 +582,82 @@ def test_protocol_rejects_tool_activity_and_interrupts_turn(tmp_path: Path) -> N
         runner.generate(_bridge_payload())
 
     assert caught.value.code == "CODEX_ISOLATION_VIOLATION"
+    assert caught.value.reason_code == "TURN_FORBIDDEN_ITEM_TYPE"
+    assert caught.value.diagnostic_id
+    assert caught.value.diagnostics == {
+        "stage": "turn_stream",
+        "method": "item/completed",
+        "item_type": "commandExecution",
+        "thread_id": "thread-1",
+        "turn_id": "turn-1",
+    }
     assert factory.instances[0].interrupted is True
+    assert caught.value.diagnostic_id in caplog.text
+    assert "forbidden" not in caplog.text
+
+
+def test_protocol_accepts_schema_confirmed_config_warning(tmp_path: Path) -> None:
+    factory = FakeConnectionFactory(config_warning=True)
+
+    result = _runner(tmp_path, factory).generate(_bridge_payload())
+
+    assert result["answer"] == "isolated answer"
+    assert factory.instances[0].interrupted is False
+
+
+def test_protocol_stops_unknown_notification_with_protocol_reason(
+    tmp_path: Path,
+) -> None:
+    factory = FakeConnectionFactory(unknown_event=True)
+
+    with pytest.raises(CodexBridgeError) as caught:
+        _runner(tmp_path, factory).generate(_bridge_payload())
+
+    assert caught.value.code == "CODEX_PROTOCOL_INCOMPATIBLE"
+    assert caught.value.reason_code == "TURN_PROTOCOL_NOTIFICATION_UNRECOGNIZED"
+    assert caught.value.diagnostics["method"] == "future/safeStatus"
+    assert caught.value.diagnostics["stage"] == "turn_stream"
+    assert factory.instances[0].interrupted is True
+
+
+@pytest.mark.parametrize(
+    ("variant", "reason_code", "field"),
+    [
+        (
+            "missing_network_access",
+            "THREAD_SAFETY_FIELD_MISSING",
+            "sandbox.networkAccess",
+        ),
+        ("invalid_sandbox", "THREAD_SAFETY_FIELD_INVALID", "sandbox"),
+        ("permission_mismatch", "THREAD_PERMISSION_MISMATCH", "sandbox.type"),
+        ("instructions", "THREAD_INSTRUCTION_SOURCES_PRESENT", "instructionSources"),
+    ],
+)
+def test_thread_safety_diagnostics_distinguish_missing_mismatch_and_instructions(
+    tmp_path: Path,
+    caplog: pytest.LogCaptureFixture,
+    variant: str,
+    reason_code: str,
+    field: str,
+) -> None:
+    factory = FakeConnectionFactory(thread_variant=variant)
+
+    with pytest.raises(CodexBridgeError) as caught:
+        _runner(tmp_path, factory).generate(_bridge_payload())
+
+    assert caught.value.code == "CODEX_ISOLATION_VIOLATION"
+    assert caught.value.reason_code == reason_code
+    assert caught.value.diagnostics["field"] == field
+    assert caught.value.diagnostic_id
+    assert "must not be logged" not in caplog.text
+    assert "must-not-be-logged" not in caplog.text
 
 
 def test_codex_cli_version_parser_uses_the_supported_minimum(monkeypatch) -> None:
     monkeypatch.setattr(
         subprocess,
         "run",
-        lambda *args, **kwargs: subprocess.CompletedProcess(
-            args[0], 0, "codex-cli 0.153.4\n", ""
-        ),
+        lambda *args, **kwargs: subprocess.CompletedProcess(args[0], 0, "codex-cli 0.153.4\n", ""),
     )
     assert MINIMUM_CODEX_VERSION == (0, 153, 4)
     assert read_codex_version() == (0, 153, 4)
@@ -622,8 +746,7 @@ def _subprocess_runner(
 
 def _logged_methods(path: Path) -> list[str | None]:
     return [
-        json.loads(line).get("method")
-        for line in path.read_text(encoding="utf-8").splitlines()
+        json.loads(line).get("method") for line in path.read_text(encoding="utf-8").splitlines()
     ]
 
 
@@ -660,8 +783,9 @@ def test_real_subprocess_protocol_status_and_generation_are_offline_and_isolated
     [
         ("tool", "CODEX_ISOLATION_VIOLATION", True),
         ("server_request", "CODEX_ISOLATION_VIOLATION", True),
+        ("server_request_during_response", "CODEX_ISOLATION_VIOLATION", False),
         ("instructions", "CODEX_ISOLATION_VIOLATION", False),
-        ("invalid_json", "CODEX_PROTOCOL_INCOMPATIBLE", False),
+        ("invalid_json", "CODEX_PROTOCOL_INCOMPATIBLE", True),
         ("rpc_error", "CODEX_LOGIN_EXPIRED", False),
         ("usage_limited", "CODEX_USAGE_LIMITED", False),
         ("missing_final", "CODEX_RESPONSE_INVALID", False),
@@ -681,6 +805,13 @@ def test_real_subprocess_protocol_fails_closed(
         runner.generate(_bridge_payload())
 
     assert caught.value.code == expected_code
+    expected_reason = {
+        "tool": "TURN_FORBIDDEN_ITEM_TYPE",
+        "server_request": "RPC_SERVER_REQUEST_DURING_TURN",
+        "server_request_during_response": "RPC_SERVER_REQUEST_DURING_RESPONSE",
+        "instructions": "THREAD_INSTRUCTION_SOURCES_PRESENT",
+    }.get(scenario)
+    assert caught.value.reason_code == expected_reason
     assert ("turn/interrupt" in _logged_methods(log_path)) is interrupted
 
 
@@ -698,10 +829,10 @@ def test_real_subprocess_protocol_timeout_interrupts_once_without_resubmit(
     assert methods.count("turn/interrupt") == 1
 
 
-def test_status_read_is_local_and_verification_failure_remains_visible(monkeypatch) -> None:
-    transport = MemoryTransport(
-        [_response(429, {"detail": {"code": "CODEX_USAGE_LIMITED"}})]
-    )
+def test_status_read_is_local_and_verification_failure_remains_visible(
+    monkeypatch,
+) -> None:
+    transport = MemoryTransport([_response(429, {"detail": {"code": "CODEX_USAGE_LIMITED"}})])
     adapter = CodexChatGPTAdapter(
         CodexChatGPTConfig(bridge_url="http://bridge.test", access_token="z" * 32),
         _settings(),
@@ -738,7 +869,9 @@ def test_status_read_is_local_and_verification_failure_remains_visible(monkeypat
     assert provider["verification_error_code"] == "CODEX_CHATGPT_USAGE_LIMITED"
 
 
-def test_codex_authentication_and_generation_verification_are_separate(monkeypatch) -> None:
+def test_codex_authentication_and_generation_verification_are_separate(
+    monkeypatch,
+) -> None:
     transport = MemoryTransport(
         [
             _response(
@@ -807,6 +940,73 @@ def test_codex_authentication_and_generation_verification_are_separate(monkeypat
     assert provider["verification_status"] == "succeeded"
     assert provider["generation_verified"] is True
     assert provider["rate_limits"] is None
+
+
+def test_codex_verification_exposes_safe_diagnostics_without_protocol_payload(
+    monkeypatch,
+) -> None:
+    transport = MemoryTransport(
+        [
+            _response(
+                200,
+                {
+                    "authentication_status": "authenticated",
+                    "models": [{"id": "account-model", "is_default": True}],
+                    "rate_limits": None,
+                    "protocol_compatible": True,
+                },
+            ),
+            _response(
+                409,
+                {
+                    "detail": {
+                        "code": "CODEX_ISOLATION_VIOLATION",
+                        "message": "safe message",
+                        "reason_code": "THREAD_PERMISSION_MISMATCH",
+                        "diagnostic_id": "diag-safe-123",
+                        "prompt": "must-not-propagate",
+                    }
+                },
+            ),
+        ]
+    )
+    adapter = CodexChatGPTAdapter(
+        CodexChatGPTConfig(bridge_url="http://bridge.test", access_token="z" * 32),
+        _settings(),
+        transport=transport,
+        transport_is_mock=True,
+    )
+    monkeypatch.setattr(
+        DefaultModelAdapterFactory,
+        "create",
+        lambda self, adapter_id, **kwargs: adapter,
+    )
+    settings = _settings(
+        model_execution_adapter="codex_chatgpt",
+        codex_bridge_url="http://bridge.test",
+        codex_bridge_token="z" * 32,
+    )
+
+    with TestClient(create_app(settings)) as client:
+        failed = client.post(
+            "/api/v1/model-execution/providers/codex_chatgpt:verify",
+            json={"model": "account-model", "perform_generation": True},
+        )
+        status_response = client.get("/api/v1/model-execution/status")
+
+    assert failed.status_code == 409
+    assert failed.json()["error"]["details"] == {
+        "reason_code": "THREAD_PERMISSION_MISMATCH",
+        "diagnostic_id": "diag-safe-123",
+    }
+    assert "must-not-propagate" not in failed.text
+    provider = next(
+        item
+        for item in status_response.json()["providers"]
+        if item["provider_id"] == "codex_chatgpt"
+    )
+    assert provider["verification_reason_code"] == "THREAD_PERMISSION_MISMATCH"
+    assert provider["verification_diagnostic_id"] == "diag-safe-123"
 
 
 def test_provider_base_urls_are_explicit_roots() -> None:

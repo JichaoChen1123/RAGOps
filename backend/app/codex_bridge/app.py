@@ -107,9 +107,14 @@ def create_bridge_app(
         try:
             return operation(resolved_factory())
         except CodexBridgeError as exc:
+            detail: dict[str, Any] = {"code": exc.code, "message": exc.message}
+            if exc.reason_code:
+                detail["reason_code"] = exc.reason_code
+            if exc.diagnostic_id:
+                detail["diagnostic_id"] = exc.diagnostic_id
             raise HTTPException(
                 status_code=exc.status_code,
-                detail={"code": exc.code, "message": exc.message},
+                detail=detail,
             ) from None
         finally:
             lock.release()
@@ -124,8 +129,6 @@ def create_bridge_app(
 
     @application.post("/v1/generate", dependencies=[Depends(authenticate)])
     def generate(payload: BridgeGenerationRequest) -> dict[str, Any]:
-        return run_exclusive(
-            lambda runner: runner.generate(payload.model_dump(mode="json"))
-        )
+        return run_exclusive(lambda runner: runner.generate(payload.model_dump(mode="json")))
 
     return application

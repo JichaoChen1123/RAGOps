@@ -152,9 +152,7 @@ def create_job(
     snapshot: dict[str, Any] = {
         "contract_version": "2.0",
         "adapter_id": execution.adapter_id,
-        "provider_id": (
-            execution.adapter_id if execution.adapter_id != "mock" else None
-        ),
+        "provider_id": (execution.adapter_id if execution.adapter_id != "mock" else None),
         "provider_name": (
             resolved_settings.openai_compat_provider_name
             if execution.adapter_id == "openai_compatible"
@@ -184,8 +182,7 @@ def create_job(
 
     legacy_model_label = payload.legacy_model_label
     compatibility_config_version = (
-        payload.config_version
-        or f"{legacy_model_label}:{execution.prompt.version}"
+        payload.config_version or f"{legacy_model_label}:{execution.prompt.version}"
         if payload.is_legacy_request
         else snapshot["config_version"]
     )
@@ -291,6 +288,14 @@ def _model_domain_error(error: ModelError) -> DomainError:
         error.code.value,
         error.message,
         status_code=status_by_code.get(error.code, status.HTTP_502_BAD_GATEWAY),
+        details={
+            key: value
+            for key, value in {
+                "reason_code": error.reason_code,
+                "diagnostic_id": error.diagnostic_id,
+            }.items()
+            if value is not None
+        },
         retryable=error.retryable,
     )
 
@@ -658,9 +663,7 @@ def _finish_job(database: Database, job_id: str, *, legacy_metric_compat: bool) 
             "status": quality_status,
             "verdict": quality_verdict,
             "score": quality_score,
-            "evaluated_sample_count": sum(
-                row.quality_status == "evaluated" for row in sample_rows
-            ),
+            "evaluated_sample_count": sum(row.quality_status == "evaluated" for row in sample_rows),
         }
         session.add(
             EvaluationReport(
@@ -694,7 +697,9 @@ def _sample_quality_status(
     if quality_gate is None:
         return "not_evaluated"
     by_name = {str(metric.get("metric_name")): metric for metric in metrics}
-    statuses = [by_name.get(rule["metric_name"], {}).get("status") for rule in quality_gate["rules"]]
+    statuses = [
+        by_name.get(rule["metric_name"], {}).get("status") for rule in quality_gate["rules"]
+    ]
     if "error" in statuses:
         return "error"
     if any(value != "ok" for value in statuses):

@@ -1,29 +1,50 @@
 from __future__ import annotations
 
 import json
+import logging
 import os
 import queue
+import re
 import subprocess
 import tempfile
 import threading
 import time
+import uuid
 from collections import deque
 from collections.abc import Callable
 from pathlib import Path
 from typing import Any, TextIO
 
 
+logger = logging.getLogger(__name__)
+
+
 class CodexBridgeError(Exception):
-    def __init__(self, code: str, message: str, *, status_code: int) -> None:
+    def __init__(
+        self,
+        code: str,
+        message: str,
+        *,
+        status_code: int,
+        reason_code: str | None = None,
+        diagnostic_id: str | None = None,
+        diagnostics: dict[str, Any] | None = None,
+    ) -> None:
         super().__init__(message)
         self.code = code
         self.message = message
         self.status_code = status_code
+        self.reason_code = reason_code
+        self.diagnostic_id = diagnostic_id
+        self.diagnostics = diagnostics or {}
 
 
 SAFE_ERRORS = {
     "CODEX_NOT_INSTALLED": (503, "Codex CLI is not installed or is not on PATH."),
-    "CODEX_PROTOCOL_INCOMPATIBLE": (409, "The installed Codex App Server protocol is incompatible."),
+    "CODEX_PROTOCOL_INCOMPATIBLE": (
+        409,
+        "The installed Codex App Server protocol is incompatible.",
+    ),
     "CODEX_NOT_AUTHENTICATED": (409, "Codex is not signed in."),
     "CODEX_WRONG_AUTH_MODE": (409, "Codex is signed in without ChatGPT authentication."),
     "CODEX_LOGIN_EXPIRED": (401, "The Codex ChatGPT login is no longer valid."),
@@ -31,7 +52,7 @@ SAFE_ERRORS = {
     "CODEX_RATE_LIMITED": (429, "Codex rate-limited the request."),
     "CODEX_TIMEOUT": (504, "Codex did not finish before the configured deadline."),
     "CODEX_CANCELLED": (409, "The Codex turn was interrupted."),
-    "CODEX_ISOLATION_VIOLATION": (409, "Codex attempted a forbidden tool or loaded an instruction file."),
+    "CODEX_ISOLATION_VIOLATION": (409, "Codex could not satisfy the evaluation isolation policy."),
     "CODEX_RESPONSE_INVALID": (502, "Codex returned an invalid final response."),
     "CODEX_CONNECTION_FAILED": (502, "Codex App Server could not complete the request."),
 }
@@ -87,6 +108,7 @@ _IGNORED_TURN_NOTIFICATIONS = {
     "thread/status/changed",
     "turn/started",
     "warning",
+    "configWarning",
 }
 
 _BLOCKED_METHOD_PREFIXES = (
@@ -103,9 +125,99 @@ _BLOCKED_METHOD_PREFIXES = (
 )
 
 
-def bridge_error(code: str) -> CodexBridgeError:
+_SAFE_DIAGNOSTIC_FIELDS = {
+    "actual",
+    "expected",
+    "field",
+    "item_type",
+    "matches",
+    "method",
+    "phase",
+    "rpc_id",
+    "rpc_method",
+    "source_count",
+    "stage",
+    "state",
+    "thread_id",
+    "turn_id",
+    "value_type",
+}
+_SAFE_DIAGNOSTIC_VALUE = re.compile(r"[A-Za-z0-9_.:/-]{1,200}\Z")
+
+
+def bridge_error(
+    code: str,
+    *,
+    reason_code: str | None = None,
+    diagnostics: dict[str, Any] | None = None,
+) -> CodexBridgeError:
     status_code, message = SAFE_ERRORS[code]
-    return CodexBridgeError(code, message, status_code=status_code)
+    safe_diagnostics = _safe_diagnostics(diagnostics)
+    diagnostic_id = uuid.uuid4().hex if reason_code else None
+    if reason_code and diagnostic_id:
+        logger.warning(
+            "codex_bridge.protocol_stopped %s",
+            json.dumps(
+                {
+                    "diagnostic_id": diagnostic_id,
+                    "error_code": code,
+                    "reason_code": reason_code,
+                    **safe_diagnostics,
+                },
+                ensure_ascii=True,
+                sort_keys=True,
+            ),
+        )
+    return CodexBridgeError(
+        code,
+        message,
+        status_code=status_code,
+        reason_code=reason_code,
+        diagnostic_id=diagnostic_id,
+        diagnostics=safe_diagnostics,
+    )
+
+
+def _safe_diagnostics(value: dict[str, Any] | None) -> dict[str, Any]:
+    if not value:
+        return {}
+    result: dict[str, Any] = {}
+    for key in _SAFE_DIAGNOSTIC_FIELDS:
+        item = value.get(key)
+        if isinstance(item, str):
+            result[key] = item if _SAFE_DIAGNOSTIC_VALUE.fullmatch(item) else "<redacted>"
+        elif isinstance(item, (bool, int)) and not isinstance(item, float):
+            result[key] = item
+    return result
+
+
+def _notification_diagnostics(
+    message: dict[str, Any], *, stage: str, rpc_method: str | None = None
+) -> dict[str, Any]:
+    diagnostics: dict[str, Any] = {"stage": stage}
+    method = message.get("method")
+    if isinstance(method, str):
+        diagnostics["method"] = method
+    if rpc_method is not None:
+        diagnostics["rpc_method"] = rpc_method
+    if isinstance(message.get("id"), (str, int)):
+        diagnostics["rpc_id"] = str(message["id"])
+    params = message.get("params")
+    if not isinstance(params, dict):
+        return diagnostics
+    for source, target in (("threadId", "thread_id"), ("turnId", "turn_id")):
+        candidate = params.get(source)
+        if isinstance(candidate, str):
+            diagnostics[target] = candidate
+    item = params.get("item")
+    if isinstance(item, dict):
+        item_type = item.get("type")
+        phase = item.get("phase")
+        if isinstance(item_type, str):
+            diagnostics["item_type"] = item_type
+        if isinstance(phase, str):
+            diagnostics["phase"] = phase
+    return diagnostics
 
 
 class JsonRpcProcess:
@@ -223,7 +335,13 @@ class JsonRpcProcess:
                 return result
             if "id" in incoming and isinstance(incoming.get("method"), str):
                 self._reject_server_request(incoming)
-                raise bridge_error("CODEX_ISOLATION_VIOLATION")
+                raise bridge_error(
+                    "CODEX_ISOLATION_VIOLATION",
+                    reason_code="RPC_SERVER_REQUEST_DURING_RESPONSE",
+                    diagnostics=_notification_diagnostics(
+                        incoming, stage="rpc_response", rpc_method=method
+                    ),
+                )
             self._pending_notifications.append(incoming)
 
     def next_notification(self, deadline: float) -> dict[str, Any]:
@@ -232,7 +350,11 @@ class JsonRpcProcess:
         incoming = self._read_until(deadline)
         if "id" in incoming and isinstance(incoming.get("method"), str):
             self._reject_server_request(incoming)
-            raise bridge_error("CODEX_ISOLATION_VIOLATION")
+            raise bridge_error(
+                "CODEX_ISOLATION_VIOLATION",
+                reason_code="RPC_SERVER_REQUEST_DURING_TURN",
+                diagnostics=_notification_diagnostics(incoming, stage="turn_stream"),
+            )
         return incoming
 
     def interrupt(self, thread_id: str, turn_id: str) -> None:
@@ -360,9 +482,7 @@ class CodexAppServerRunner:
         ) as sandbox_dir:
             return self._generate_in_sandbox(request, Path(sandbox_dir).resolve())
 
-    def _generate_in_sandbox(
-        self, request: dict[str, Any], sandbox: Path
-    ) -> dict[str, Any]:
+    def _generate_in_sandbox(self, request: dict[str, Any], sandbox: Path) -> dict[str, Any]:
         started = time.monotonic()
         with self._connection(sandbox) as rpc:
             rpc.initialize(self.timeout_seconds)
@@ -432,11 +552,13 @@ class CodexAppServerRunner:
             if not isinstance(turn_id, str):
                 raise bridge_error("CODEX_RESPONSE_INVALID")
             try:
-                answer_text, usage, routed_model = self._wait_for_turn(
-                    rpc, thread_id, turn_id
-                )
+                answer_text, usage, routed_model = self._wait_for_turn(rpc, thread_id, turn_id)
             except CodexBridgeError as exc:
-                if exc.code in {"CODEX_TIMEOUT", "CODEX_ISOLATION_VIOLATION"}:
+                if exc.code in {
+                    "CODEX_TIMEOUT",
+                    "CODEX_ISOLATION_VIOLATION",
+                    "CODEX_PROTOCOL_INCOMPATIBLE",
+                }:
                     rpc.interrupt(thread_id, turn_id)
                 raise
             answer = _parse_final_answer(answer_text)
@@ -470,7 +592,11 @@ class CodexAppServerRunner:
                     raise bridge_error("CODEX_RESPONSE_INVALID")
                 item_type = item.get("type")
                 if item_type not in {"userMessage", "reasoning", "agentMessage", "plan"}:
-                    raise bridge_error("CODEX_ISOLATION_VIOLATION")
+                    raise bridge_error(
+                        "CODEX_ISOLATION_VIOLATION",
+                        reason_code="TURN_FORBIDDEN_ITEM_TYPE",
+                        diagnostics=_notification_diagnostics(notification, stage="turn_stream"),
+                    )
                 if item_type == "agentMessage" and method == "item/completed":
                     phase = item.get("phase")
                     item_id = item.get("id")
@@ -509,9 +635,17 @@ class CodexAppServerRunner:
             elif method in _IGNORED_TURN_NOTIFICATIONS:
                 continue
             elif isinstance(method, str) and method.startswith(_BLOCKED_METHOD_PREFIXES):
-                raise bridge_error("CODEX_ISOLATION_VIOLATION")
+                raise bridge_error(
+                    "CODEX_ISOLATION_VIOLATION",
+                    reason_code="TURN_FORBIDDEN_METHOD",
+                    diagnostics=_notification_diagnostics(notification, stage="turn_stream"),
+                )
             else:
-                raise bridge_error("CODEX_ISOLATION_VIOLATION")
+                raise bridge_error(
+                    "CODEX_PROTOCOL_INCOMPATIBLE",
+                    reason_code="TURN_PROTOCOL_NOTIFICATION_UNRECOGNIZED",
+                    diagnostics=_notification_diagnostics(notification, stage="turn_stream"),
+                )
 
     def _models(self, rpc: JsonRpcProcess) -> list[dict[str, Any]]:
         response = rpc.request(
@@ -568,28 +702,155 @@ def _validate_thread_response(
     response: dict[str, Any], *, sandbox: Path, requested_model: object
 ) -> str:
     thread = response.get("thread")
+    if not isinstance(thread, dict):
+        state = "missing" if "thread" not in response or thread is None else "invalid_type"
+        raise bridge_error(
+            "CODEX_PROTOCOL_INCOMPATIBLE",
+            reason_code=(
+                "THREAD_RESPONSE_FIELD_MISSING"
+                if state == "missing"
+                else "THREAD_RESPONSE_FIELD_INVALID"
+            ),
+            diagnostics={
+                "stage": "thread_validation",
+                "field": "thread",
+                "state": state,
+                "value_type": type(thread).__name__,
+            },
+        )
     policy = response.get("sandbox")
-    if not isinstance(thread, dict) or not isinstance(policy, dict):
-        raise bridge_error("CODEX_PROTOCOL_INCOMPATIBLE")
+    if not isinstance(policy, dict):
+        state = "missing" if "sandbox" not in response or policy is None else "invalid_type"
+        raise bridge_error(
+            "CODEX_ISOLATION_VIOLATION",
+            reason_code=(
+                "THREAD_SAFETY_FIELD_MISSING"
+                if state == "missing"
+                else "THREAD_SAFETY_FIELD_INVALID"
+            ),
+            diagnostics={
+                "stage": "thread_validation",
+                "field": "sandbox",
+                "state": state,
+                "value_type": type(policy).__name__,
+            },
+        )
+
+    required_fields = (
+        (response, "cwd", "cwd"),
+        (response, "model", "model"),
+        (response, "approvalPolicy", "approvalPolicy"),
+        (response, "instructionSources", "instructionSources"),
+        (policy, "type", "sandbox.type"),
+        (policy, "networkAccess", "sandbox.networkAccess"),
+        (thread, "cwd", "thread.cwd"),
+        (thread, "ephemeral", "thread.ephemeral"),
+    )
+    for container, key, field in required_fields:
+        if key not in container or container[key] is None:
+            raise bridge_error(
+                "CODEX_ISOLATION_VIOLATION",
+                reason_code="THREAD_SAFETY_FIELD_MISSING",
+                diagnostics={
+                    "stage": "thread_validation",
+                    "field": field,
+                    "state": "missing",
+                },
+            )
+
+    instruction_sources = response["instructionSources"]
+    if not isinstance(instruction_sources, list):
+        raise bridge_error(
+            "CODEX_ISOLATION_VIOLATION",
+            reason_code="THREAD_SAFETY_FIELD_INVALID",
+            diagnostics={
+                "stage": "thread_validation",
+                "field": "instructionSources",
+                "state": "invalid_type",
+                "value_type": type(instruction_sources).__name__,
+            },
+        )
+    if instruction_sources:
+        raise bridge_error(
+            "CODEX_ISOLATION_VIOLATION",
+            reason_code="THREAD_INSTRUCTION_SOURCES_PRESENT",
+            diagnostics={
+                "stage": "thread_validation",
+                "field": "instructionSources",
+                "state": "non_empty",
+                "source_count": len(instruction_sources),
+            },
+        )
+
     try:
-        returned_cwd = Path(str(response.get("cwd"))).resolve()
-        thread_cwd = Path(str(thread.get("cwd"))).resolve()
+        returned_cwd = Path(str(response["cwd"])).resolve()
+        thread_cwd = Path(str(thread["cwd"])).resolve()
     except (OSError, ValueError):
-        raise bridge_error("CODEX_ISOLATION_VIOLATION") from None
-    if (
-        response.get("instructionSources") != []
-        or returned_cwd != sandbox
-        or thread_cwd != sandbox
-        or response.get("approvalPolicy") != "never"
-        or policy.get("type") != "readOnly"
-        or policy.get("networkAccess") is not False
-        or thread.get("ephemeral") is not True
-        or response.get("model") != requested_model
-    ):
-        raise bridge_error("CODEX_ISOLATION_VIOLATION")
+        raise bridge_error(
+            "CODEX_ISOLATION_VIOLATION",
+            reason_code="THREAD_DIRECTORY_INVALID",
+            diagnostics={
+                "stage": "thread_validation",
+                "field": "cwd",
+                "state": "invalid",
+                "matches": False,
+            },
+        ) from None
+    for field, candidate in (("cwd", returned_cwd), ("thread.cwd", thread_cwd)):
+        if candidate != sandbox:
+            raise bridge_error(
+                "CODEX_ISOLATION_VIOLATION",
+                reason_code="THREAD_DIRECTORY_MISMATCH",
+                diagnostics={
+                    "stage": "thread_validation",
+                    "field": field,
+                    "state": "mismatch",
+                    "matches": False,
+                },
+            )
+
+    expected_values = (
+        ("approvalPolicy", response["approvalPolicy"], "never"),
+        ("sandbox.type", policy["type"], "readOnly"),
+        ("sandbox.networkAccess", policy["networkAccess"], False),
+        ("thread.ephemeral", thread["ephemeral"], True),
+    )
+    for field, actual, expected in expected_values:
+        if actual != expected:
+            raise bridge_error(
+                "CODEX_ISOLATION_VIOLATION",
+                reason_code="THREAD_PERMISSION_MISMATCH",
+                diagnostics={
+                    "stage": "thread_validation",
+                    "field": field,
+                    "state": "mismatch",
+                    "actual": actual,
+                    "expected": expected,
+                },
+            )
+
+    if response["model"] != requested_model:
+        raise bridge_error(
+            "CODEX_ISOLATION_VIOLATION",
+            reason_code="THREAD_MODEL_MISMATCH",
+            diagnostics={
+                "stage": "thread_validation",
+                "field": "model",
+                "state": "mismatch",
+                "matches": False,
+            },
+        )
     thread_id = thread.get("id")
     if not isinstance(thread_id, str) or not thread_id:
-        raise bridge_error("CODEX_RESPONSE_INVALID")
+        raise bridge_error(
+            "CODEX_RESPONSE_INVALID",
+            reason_code="THREAD_ID_MISSING",
+            diagnostics={
+                "stage": "thread_validation",
+                "field": "thread.id",
+                "state": "missing" if "id" not in thread else "invalid",
+            },
+        )
     return thread_id
 
 
@@ -629,7 +890,9 @@ def _safe_usage(value: object) -> dict[str, int] | None:
         "output_tokens": last.get("outputTokens"),
         "total_tokens": last.get("totalTokens"),
     }
-    if any(not isinstance(item, int) or isinstance(item, bool) or item < 0 for item in result.values()):
+    if any(
+        not isinstance(item, int) or isinstance(item, bool) or item < 0 for item in result.values()
+    ):
         return None
     return result  # type: ignore[return-value]
 
