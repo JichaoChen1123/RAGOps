@@ -14,19 +14,11 @@ export function TrendChart({ points }: { points: TrendPoint[] }) {
     ...point,
   }));
   const path = coords.map((point, index) => `${index === 0 ? 'M' : 'L'} ${point.x} ${point.y}`).join(' ');
-  const area = `${path} L ${coords.at(-1)?.x ?? padding} ${height - padding} L ${padding} ${height - padding} Z`;
 
   return (
     <div className="trend-chart">
       <svg viewBox={`0 0 ${width} ${height}`} role="img" aria-label="最近七次评测质量趋势">
-        <defs>
-          <linearGradient id="trendArea" x1="0" y1="0" x2="0" y2="1">
-            <stop offset="0%" stopColor="#5b8def" stopOpacity="0.32" />
-            <stop offset="100%" stopColor="#5b8def" stopOpacity="0" />
-          </linearGradient>
-        </defs>
         {[0.25, 0.5, 0.75].map((ratio) => <line key={ratio} x1={padding} x2={width - padding} y1={padding + plotHeight * ratio} y2={padding + plotHeight * ratio} className="grid-line" />)}
-        <path d={area} fill="url(#trendArea)" />
         <path d={path} className="trend-line" />
         {coords.map((point) => <circle key={point.label} cx={point.x} cy={point.y} r="4" className="trend-dot"><title>{point.label}: {point.score}</title></circle>)}
       </svg>

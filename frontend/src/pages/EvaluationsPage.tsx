@@ -179,7 +179,7 @@ export function EvaluationsPage() {
         ) : tasks.length === 0 ? (
           <EmptyState title="未找到匹配任务" description="尝试更换关键词或清除状态筛选。" />
         ) : (
-          <div className="table-wrap">
+          <div className="table-wrap" tabIndex={0} role="region" aria-label="评测任务表格，可横向滚动查看完整字段与操作">
             <table>
               <thead><tr><th>任务</th><th>生命周期</th><th>执行结果</th><th>质量状态</th><th>执行器 / 模型</th><th>样本</th><th>质量分</th><th>创建时间</th><th /></tr></thead>
               <tbody>{tasks.map((task) => (

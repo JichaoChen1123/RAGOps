@@ -1,0 +1,75 @@
+{
+  "mode": "api",
+  "viewports": [
+    {
+      "name": "datasets-1440",
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "textLength": 447,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "report-1440",
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "textLength": 1595,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "diagnosis-1440",
+      "width": 1440,
+      "height": 900,
+      "clientWidth": 1440,
+      "scrollWidth": 1440,
+      "textLength": 1732,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "overview-390",
+      "width": 390,
+      "height": 844,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 601,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "evaluations-390",
+      "width": 390,
+      "height": 844,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 696,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "report-390",
+      "width": 390,
+      "height": 844,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 1414,
+      "surface": "rgb(224, 229, 236)"
+    },
+    {
+      "name": "diagnosis-390",
+      "width": 390,
+      "height": 844,
+      "clientWidth": 390,
+      "scrollWidth": 390,
+      "textLength": 1551,
+      "surface": "rgb(224, 229, 236)"
+    }
+  ],
+  "interactions": [
+    "API: frontend API / backend mock / provider not configured; real localhost dataset import, task, report and diagnosis; quality/token/cost unknown retained; external calls disabled"
+  ],
+  "consoleErrors": [],
+  "externalRequests": [],
+  "contrast": [],
+  "passed": true
+}

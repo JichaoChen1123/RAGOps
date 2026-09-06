@@ -2,7 +2,6 @@ import {
   ArrowRight,
   BadgeCheck,
   Bot,
-  CalendarRange,
   Database,
   FileCheck2,
   GitBranch,
@@ -20,11 +19,11 @@ import { Dialog, Toast } from '../components/Interaction';
 import { MetricCard } from '../components/MetricCard';
 import { PageIntro, Panel } from '../components/Panel';
 import { EmptyState, ErrorState, LoadingState, PartialDataBanner } from '../components/PageState';
+import { TaskStack } from '../components/TaskStack';
 import { StatusBadge } from '../components/StatusBadge';
 import { TrendChart } from '../components/TrendChart';
 import type { WorkspaceOutletContext } from '../components/WorkspaceShell';
 import { useApiResource } from '../hooks/useApiResource';
-import { formatDateTime } from '../lib/format';
 import type { EvaluationTask, ProjectOverview } from '../types';
 
 const emptyOverview: ProjectOverview = {
@@ -33,12 +32,12 @@ const emptyOverview: ProjectOverview = {
 };
 
 const pipelineSteps = [
-  { label: 'Dataset', title: '数据集', detail: 'v3.4 · 120 samples', state: 'READY', icon: Database },
-  { label: 'Evaluation Job', title: '评测任务', detail: 'eval-20260826', state: 'DONE', icon: Play },
+  { label: 'Dataset', title: '数据集', detail: '固定版本 · 样本标签', state: 'READY', icon: Database },
+  { label: 'Evaluation Job', title: '评测任务', detail: '执行器 · 运行快照', state: 'DONE', icon: Play },
   { label: 'Metrics', title: '指标计算', detail: '状态化结果 · 不补零', state: 'STATE', icon: Microscope },
-  { label: 'Failure Diagnosis', title: '失败诊断', detail: '4 rules · evidence-linked', state: 'TRACE', icon: ScanSearch },
+  { label: 'Failure Diagnosis', title: '失败诊断', detail: '规则 · 可追溯证据', state: 'TRACE', icon: ScanSearch },
   { label: 'Report', title: '评测报告', detail: 'JSON · audit ready', state: 'READY', icon: FileCheck2 },
-  { label: 'Review', title: '人工复核', detail: '1 pending · feedback loop', state: 'OPEN', icon: BadgeCheck },
+  { label: 'Review', title: '人工复核', detail: '确认 · 排除 · 反馈', state: 'OPEN', icon: BadgeCheck },
 ];
 
 const capabilityGroups = [
@@ -78,7 +77,7 @@ function RuntimeContext({ task }: { task?: EvaluationTask }) {
       <div><span className={`runtime-signal runtime-${apiMode}`}><i />{apiMode === 'mock' ? 'MOCK FIXTURE' : 'API DATA'}</span><small>前端数据源</small></div>
       <div><Bot size={15} /><span><strong>{task?.adapterId ?? '未知'}</strong><small>后端执行器</small></span></div>
       <div><GitBranch size={15} /><span><strong>{task?.modelVersion ?? '未知'}</strong><small>请求模型（来自快照）</small></span></div>
-      <div><ShieldCheck size={15} /><span><strong>{task?.qualityStatus === 'evaluated' ? task.qualityVerdict : task?.qualityStatus === 'not_evaluated' ? '未评估' : '未知'}</strong><small>质量状态 / 非执行状态</small></span></div>
+      <div><ShieldCheck size={15} /><span><strong>{task ? <StatusBadge value={task.qualityStatus} /> : '未知'}</strong><small>质量状态 / 非执行状态</small></span></div>
     </section>
   );
 }
@@ -157,12 +156,15 @@ export function OverviewPage() {
       <RuntimeContext task={data.recentTasks[0]} />
       <PartialDataBanner message={state.partialMessage} />
       {data.warnings?.map((warning) => <PartialDataBanner key={warning} message={warning} />)}
+      <section className="recent-runs" aria-labelledby="recent-runs-title">
+        <header className="section-heading"><div><h2 id="recent-runs-title">最近评测任务</h2><p>逐次检查执行、质量与运行版本。</p></div><Link className="text-button" to={`/projects/${projectId}/evaluations`}>全部任务 <ArrowRight size={14} /></Link></header>
+        <TaskStack tasks={data.recentTasks} projectId={projectId} />
+      </section>
       {data.metrics.length === 0 ? (
         <EmptyState title="暂无已评质量指标" description="任务执行记录与质量评估分别展示。" action={<Link className="button button-primary" to={`/projects/${projectId}/datasets`}>前往数据集</Link>} />
       ) : (
         <>
           <div className="metric-grid">{data.metrics.map((metric) => <MetricCard key={metric.key} metric={metric} />)}</div>
-          <TechnicalCapabilities />
           <div className="dashboard-grid">
             <Panel title="质量趋势" eyebrow="仅展示已评估记录" action={<button className="text-button" type="button" onClick={() => setTrendOpen(true)}>查看趋势看板 <ArrowRight size={14} /></button>} className="panel-wide">
               <span id="quality-trends" className="anchor-target" />
@@ -174,26 +176,7 @@ export function OverviewPage() {
           </div>
         </>
       )}
-          <Panel title="最近评测任务" eyebrow="任务与版本" action={<Link className="text-button" to={`/projects/${projectId}/evaluations`}>全部任务 <ArrowRight size={14} /></Link>}>
-            <div className="table-wrap">
-              <table>
-                <thead><tr><th>任务</th><th>生命周期</th><th>执行</th><th>质量</th><th>数据集</th><th>执行器</th><th>质量分</th><th>更新时间</th><th /></tr></thead>
-                <tbody>{data.recentTasks.map((task) => (
-                  <tr key={task.id}>
-                    <td><strong>{task.name} {task.isMock === true && <em className="mock-label">SIMULATED</em>}</strong><small>{task.id}</small></td>
-                    <td><StatusBadge value={task.status} /></td>
-                    <td>{task.outcome ? <StatusBadge value={task.outcome} /> : '尚无结果'}</td>
-                    <td><StatusBadge value={task.qualityStatus} /></td>
-                    <td>{task.datasetName}</td>
-                    <td><code>{task.adapterId ?? '未知'}</code></td>
-                    <td className="score-cell">{task.qualityScore ?? '未知'}</td>
-                    <td><span className="inline-icon"><CalendarRange size={14} />{formatDateTime(task.completedAt ?? task.createdAt)}</span></td>
-                    <td>{(task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled') && <Link aria-label={`查看 ${task.name} 报告`} className="row-link" to={`/projects/${projectId}/evaluations/${task.id}/report`}><ArrowRight size={16} /></Link>}</td>
-                  </tr>
-                ))}</tbody>
-              </table>
-            </div>
-          </Panel>
+      {apiMode === 'mock' && data.metrics.length > 0 && <TechnicalCapabilities />}
       <Dialog open={trendOpen} title="质量与延迟趋势" eyebrow="LAST 7 EVALUATIONS" onClose={() => setTrendOpen(false)}>
         {data.trend.length > 0 ? <><TrendChart points={data.trend} /><div className="chart-legend"><span><i className="legend-blue" />已评质量分</span></div><div className="table-wrap compact-table"><table><thead><tr><th>评测日期</th><th>质量分</th><th>端到端延迟</th></tr></thead><tbody>{data.trend.map((point) => <tr key={point.label}><td>{point.label}</td><td className="score-cell">{point.score}</td><td>{point.latencyMs}ms</td></tr>)}</tbody></table></div></> : <EmptyState title="质量趋势未评估" description="当前记录只有执行结果，未生成语义质量分。" />}
         <p className="form-hint">只展示报告明确返回的质量分；不使用执行成功率推算质量，也不按阈值在浏览器补造门禁结论。</p>
