@@ -1,10 +1,10 @@
 # WOR-73 双通道离线安全与端到端验收
 
-验收日期：2026-09-06。受测固定 SHA：`6f830887cad460207adc4e3463328aa337a08f85`；来源分支：`feature/dual-model-channels`；目标分支：`agent/ragops/bd1953fd5894`。
+验收日期：2026-09-06。受测产品实现 SHA：`89819e248aa5dfb1869aee3eed553207241eee84`；整合 QA 测试后的复验 SHA：`eb9f5f8e5864c9edaab8059c0538689ebaceda80`；来源分支：`feature/dual-model-channels`；目标分支：`agent/ragops/bd1953fd5894`。
 
 结论：**离线验收通过，提交用户评审**。公共契约、后端适配器、Windows 主机桥接、前端状态/报告、Docker Compose 与 mock 闭环均有独立离线证据。真实账号、真实 Key、真实模型和真实费用验证未执行，不能由本报告推断为可用。
 
-独立复验首次执行 CI 等价覆盖率门禁时，145 项断言全部通过，但总分支覆盖率仅 `83.51%`，低于仓库既有 `85%` 门槛，属于交付阻断。`tests/backend/test_dual_channel_acceptance.py` 补充了外部总闸、参数拒绝、无跨通道回退、未知遥测、协议错误闭集、线程隔离响应和桥接 CLI 安全测试；最终 157 项通过，覆盖率 `85.22%`，未修改生产行为。
+独立 QA 最初基于旧产品提交 `6f830887cad460207adc4e3463328aa337a08f85` 复验，145 项断言全部通过，但总分支覆盖率仅 `83.51%`，低于仓库既有 `85%` 门槛。负责人随后在最新产品提交补入真实子进程级 fake Codex App Server 测试；QA 又补充了外部总闸、参数拒绝、无跨通道回退、未知遥测、协议错误闭集、线程隔离响应和桥接 CLI 安全测试。两组测试整合后，最终 167 项通过，覆盖率 `87.79%`，没有为通过门禁而降低阈值。
 
 ## 范围与环境
 
@@ -59,7 +59,7 @@ npm --prefix frontend run build
 docker compose config --quiet
 ```
 
-最终结果：Ruff 通过；后端/评测 `157 passed`，分支覆盖率 `85.22%`；前端 7 个文件、`56 passed`；typecheck 和 production build 通过；Compose 配置通过。Docker 镜像构建、双服务健康、1 条 mock API 闭环与容器重启持久化通过。
+最终结果：Ruff 通过；最新整合分支后端/评测 `167 passed`，分支覆盖率 `87.79%`；前端 7 个文件、`56 passed`；typecheck 和 production build 通过；Compose 配置通过。Docker 镜像构建、双服务健康、1 条 mock API 闭环与容器重启持久化通过。
 
 本轮仅有 3 条非阻断弃用告警：Starlette `TestClient` 的 httpx 兼容层 1 条，以及 `HTTP_422_UNPROCESSABLE_ENTITY` 常量 2 条。它们不改变当前行为，但升级 FastAPI/Starlette/httpx 前应消除。
 
@@ -78,7 +78,7 @@ docker compose config --quiet
 
 | 代码已实现 | 离线测试通过 | 真实连接已验证 |
 | --- | --- | --- |
-| 三执行通道契约、OpenAI-compatible/Codex 适配器、主机桥接、错误模型、前端三轴与报告、Docker 配置 | **是**：157 项后端/评测、56 项前端、覆盖率/构建、Docker mock 闭环与重启持久化均通过 | **未执行**：无账号登录、无真实 Key、无真实模型调用、无额度/费用和真实质量结论 |
+| 三执行通道契约、OpenAI-compatible/Codex 适配器、主机桥接、错误模型、前端三轴与报告、Docker 配置 | **是**：167 项后端/评测、56 项前端、覆盖率/构建、Docker mock 闭环与重启持久化均通过 | **未执行**：无账号登录、无真实 Key、无真实模型调用、无额度/费用和真实质量结论 |
 
 ## 剩余风险
 
