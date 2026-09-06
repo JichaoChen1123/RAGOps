@@ -74,6 +74,7 @@ describe('workspace navigation and RAGOps capabilities', () => {
     expect(snapshot).toHaveTextContent('BACKEND EXECUTION ADAPTER');
     expect(snapshot).toHaveTextContent('mock');
     expect(snapshot).toHaveTextContent('openai_compatible · 未配置');
-    expect(snapshot).toHaveTextContent('本阶段不提供真实验证入口');
+    expect(snapshot).toHaveTextContent('检查 ChatGPT 登录（不生成）');
+    expect(snapshot).toHaveTextContent('真实小请求检查');
   });
 });

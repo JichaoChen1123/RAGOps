@@ -10,12 +10,14 @@ import type {
   EvaluationReport,
   EvaluationTask,
   EvaluationTaskCreateInput,
+  ExecutionAdapterId,
   ExecutionSnapshot,
   FailureBucket,
   MetricStatus,
   MetricValue,
   ModelErrorSummary,
   ModelExecutionStatus,
+  ModelExecutionVerification,
   ProjectOverview,
   ProviderConfigurationStatus,
   QualityStatus,
@@ -23,6 +25,7 @@ import type {
   ReportExport,
   SampleDiagnosis,
   SampleReviewStatus,
+  SampleRunDetail,
   SampleSummary,
   Severity,
 } from '../types';
@@ -166,6 +169,19 @@ interface RawModelExecutionStatus {
   providers?: Array<Record<string, unknown>>;
 }
 
+interface RawModelExecutionVerification {
+  adapter_id?: string;
+  check?: string;
+  check_type?: string;
+  status?: string;
+  checked_at?: string | null;
+  message?: string;
+  model?: string | null;
+  usage?: Record<string, unknown> | null;
+  request_id?: string | null;
+  provider_request_id?: string | null;
+}
+
 interface StructuredErrorPayload {
   detail?: string | unknown[];
   message?: string;
@@ -212,6 +228,16 @@ function recordBoolean(record: Record<string, unknown> | undefined, ...keys: str
 function recordStringArray(record: Record<string, unknown> | undefined, key: string): string[] {
   const value = record?.[key];
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === 'string') : [];
+}
+
+function recordNullableStringArray(record: Record<string, unknown> | undefined, key: string): string[] | null {
+  if (!Array.isArray(record?.[key])) return null;
+  return (record[key] as unknown[]).flatMap((item) => {
+    if (typeof item === 'string') return [item];
+    const itemRecord = asRecord(item);
+    const id = recordString(itemRecord, 'id', 'model', 'name');
+    return id ? [id] : [];
+  });
 }
 
 function recordArray(record: Record<string, unknown> | undefined, key: string): Array<Record<string, unknown>> {
@@ -466,8 +492,41 @@ function sampleParts(raw: RawEvaluationSample) {
   };
 }
 
+function mapSampleRun(raw: RawEvaluationSample, parts: ReturnType<typeof sampleParts>): SampleRunDetail {
+  const usage = asRecord(parts.run?.usage);
+  const mappedUsage = usage
+    && recordNumber(usage, 'input_tokens') !== null
+    && recordNumber(usage, 'output_tokens') !== null
+    && recordNumber(usage, 'total_tokens') !== null
+    ? {
+      inputTokens: recordNumber(usage, 'input_tokens') as number,
+      outputTokens: recordNumber(usage, 'output_tokens') as number,
+      totalTokens: recordNumber(usage, 'total_tokens') as number,
+    }
+    : null;
+  return {
+    runId: recordString(parts.run, 'run_id') ?? null,
+    status: parts.runStatus,
+    adapterId: recordString(parts.run, 'adapter_id') ?? null,
+    providerId: recordString(parts.run, 'provider_id') ?? null,
+    requestedModel: recordString(parts.run, 'requested_model') ?? null,
+    actualModel: recordString(parts.run, 'actual_model') ?? null,
+    isMock: recordBoolean(parts.run, 'is_mock'),
+    finishReason: recordString(parts.run, 'finish_reason') ?? null,
+    latencyMs: recordNumber(parts.run, 'latency_ms') ?? (typeof raw.latency_ms === 'number' ? raw.latency_ms : null),
+    usage: mappedUsage,
+    cost: recordNumber(parts.run, 'cost'),
+    providerRequestId: recordString(parts.run, 'provider_request_id') ?? null,
+    attemptCount: recordNumber(parts.run, 'attempt_count'),
+    error: parts.error,
+    startedAt: recordString(parts.run, 'started_at') ?? null,
+    finishedAt: recordString(parts.run, 'finished_at') ?? null,
+  };
+}
+
 function mapSample(raw: RawEvaluationSample): SampleSummary {
   const parts = sampleParts(raw);
+  const run = mapSampleRun(raw, parts);
   const diagnoses = raw.diagnoses ?? [];
   const diagnosisRecord = diagnoses[0];
   const recall = findMetric(parts.metrics, 'recall_at_5');
@@ -488,14 +547,15 @@ function mapSample(raw: RawEvaluationSample): SampleSummary {
     faithfulnessStatus: faithfulness?.status ?? 'not_evaluated',
     citationSupportRate: typeof citationSupport?.value === 'number' ? citationSupport.value : null,
     citationSupportStatus: citationSupport?.status ?? 'not_evaluated',
-    latencyMs: recordNumber(parts.run, 'latency_ms') ?? (typeof raw.latency_ms === 'number' ? raw.latency_ms : null),
+    latencyMs: run.latencyMs,
     runStatus: parts.runStatus,
     qualityStatus: qualityStatus(raw.quality_status),
     reviewStatus: raw.review_status,
     contexts: parts.contexts,
     citations: parts.citations,
     error: parts.error,
-    isMock: recordBoolean(parts.run, 'is_mock'),
+    isMock: run.isMock,
+    run,
   };
 }
 
@@ -582,18 +642,7 @@ function diagnosisRule(raw: Record<string, unknown> | undefined, fallback: strin
 function mapDiagnosis(raw: RawEvaluationSample, taskId: string): SampleDiagnosis {
   const parts = sampleParts(raw);
   const diagnoses = raw.diagnoses ?? [];
-  const usage = asRecord(parts.run?.usage);
-  const mappedUsage = usage
-    && recordNumber(usage, 'input_tokens') !== null
-    && recordNumber(usage, 'output_tokens') !== null
-    && recordNumber(usage, 'total_tokens') !== null
-    ? {
-      inputTokens: recordNumber(usage, 'input_tokens') as number,
-      outputTokens: recordNumber(usage, 'output_tokens') as number,
-      totalTokens: recordNumber(usage, 'total_tokens') as number,
-    }
-    : null;
-  const runId = recordString(parts.run, 'run_id') ?? null;
+  const run = mapSampleRun(raw, parts);
   return {
     id: raw.id,
     sampleId: raw.sample_id,
@@ -608,26 +657,9 @@ function mapDiagnosis(raw: RawEvaluationSample, taskId: string): SampleDiagnosis
     secondaryDiagnoses: diagnoses.slice(1).map((item) => diagnosisRule(item, 'unclassified')),
     contexts: parts.contexts,
     citations: parts.citations,
-    run: {
-      runId,
-      status: parts.runStatus,
-      adapterId: recordString(parts.run, 'adapter_id') ?? null,
-      providerId: recordString(parts.run, 'provider_id') ?? null,
-      requestedModel: recordString(parts.run, 'requested_model') ?? null,
-      actualModel: recordString(parts.run, 'actual_model') ?? null,
-      isMock: recordBoolean(parts.run, 'is_mock'),
-      finishReason: recordString(parts.run, 'finish_reason') ?? null,
-      latencyMs: recordNumber(parts.run, 'latency_ms') ?? (typeof raw.latency_ms === 'number' ? raw.latency_ms : null),
-      usage: mappedUsage,
-      cost: recordNumber(parts.run, 'cost'),
-      providerRequestId: recordString(parts.run, 'provider_request_id') ?? null,
-      attemptCount: recordNumber(parts.run, 'attempt_count'),
-      error: parts.error,
-      startedAt: recordString(parts.run, 'started_at') ?? null,
-      finishedAt: recordString(parts.run, 'finished_at') ?? null,
-    },
+    run,
     reviewStatus: raw.review_status,
-    traceId: runId,
+    traceId: run.runId,
     evaluatedAt: recordString(parts.run, 'finished_at') ?? raw.reviewed_at ?? null,
     warnings: diagnoses.length === 0 ? ['后端尚未返回样本级诊断规则。'] : undefined,
   };
@@ -700,7 +732,22 @@ function mapModelExecutionStatus(raw: RawModelExecutionStatus): ModelExecutionSt
       const configurationStatus: ProviderConfigurationStatus = statusValue === 'configured_unverified' || statusValue === 'verified' || statusValue === 'not_configured'
         ? statusValue
         : 'unknown';
+      const loginValue = recordString(item, 'login_status', 'authentication_status');
+      const loginStatus = loginValue === 'logged_in' || loginValue === 'authenticated' || loginValue === 'signed_in'
+        ? 'logged_in' as const
+        : loginValue === 'logged_out' || loginValue === 'unauthenticated' || loginValue === 'signed_out'
+          ? 'logged_out' as const
+          : loginValue === 'expired' ? 'expired' as const
+            : loginValue === 'not_applicable' ? 'not_applicable' as const : 'unknown' as const;
+      const connection = asRecord(item.last_connection_check);
+      const connectionValue = recordString(item, 'last_connection_check_status') ?? recordString(connection, 'status');
+      const lastConnectionCheckStatus = connectionValue === 'succeeded' || connectionValue === 'passed'
+        ? 'succeeded' as const
+        : connectionValue === 'failed' ? 'failed' as const
+          : connectionValue === 'not_checked' ? 'not_checked' as const : 'unknown' as const;
+      const quota = asRecord(item.quota) ?? asRecord(item.rate_limits);
       return {
+        adapterId: recordString(item, 'adapter_id') ?? recordString(item, 'provider_id') ?? null,
         providerId: recordString(item, 'provider_id') ?? null,
         configurationStatus,
         baseUrlConfigured: recordBoolean(item, 'base_url_configured'),
@@ -708,9 +755,56 @@ function mapModelExecutionStatus(raw: RawModelExecutionStatus): ModelExecutionSt
         defaultModelConfigured: recordBoolean(item, 'default_model_configured'),
         lastVerifiedAt: recordString(item, 'last_verified_at') ?? null,
         verificationMessage: recordString(item, 'verification_message') ?? null,
+        loginStatus,
+        lastConnectionCheckAt: recordString(item, 'last_connection_check_at') ?? recordString(connection, 'checked_at') ?? null,
+        lastConnectionCheckStatus,
+        realGenerationVerified: recordBoolean(item, 'real_generation_verified', 'generation_verified'),
+        lastGenerationVerifiedAt: recordString(item, 'last_generation_verified_at') ?? null,
+        codexVersion: recordString(item, 'codex_version') ?? null,
+        availableModels: recordNullableStringArray(item, 'available_models'),
+        quota: quota ? {
+          remaining: recordNumber(quota, 'remaining'),
+          limit: recordNumber(quota, 'limit'),
+          unit: recordString(quota, 'unit') ?? null,
+          resetsAt: recordString(quota, 'resets_at', 'reset_at') ?? null,
+          message: recordString(quota, 'message') ?? null,
+        } : null,
       };
     }),
     source: 'api',
+  };
+}
+
+function mapModelExecutionVerification(raw: RawModelExecutionVerification): ModelExecutionVerification {
+  const adapterId = raw.adapter_id;
+  const checkValue = raw.check_type ?? raw.check;
+  const check = checkValue === 'login' || checkValue === 'generation' ? checkValue : null;
+  const status = raw.status === 'succeeded' || raw.status === 'passed'
+    ? 'succeeded' as const
+    : raw.status === 'failed' ? 'failed' as const : null;
+  if (!adapterId || !check || !status) {
+    throw new ApiError('连接验证响应缺少通道、检查类型或结果。', 502, 'INVALID_VERIFICATION_RESPONSE');
+  }
+  const usage = asRecord(raw.usage);
+  const mappedUsage = usage
+    && recordNumber(usage, 'input_tokens') !== null
+    && recordNumber(usage, 'output_tokens') !== null
+    && recordNumber(usage, 'total_tokens') !== null
+    ? {
+      inputTokens: recordNumber(usage, 'input_tokens') as number,
+      outputTokens: recordNumber(usage, 'output_tokens') as number,
+      totalTokens: recordNumber(usage, 'total_tokens') as number,
+    }
+    : null;
+  return {
+    adapterId,
+    check,
+    status,
+    checkedAt: raw.checked_at ?? null,
+    message: raw.message ?? (status === 'succeeded' ? '连接检查通过。' : '连接检查失败。'),
+    model: raw.model ?? null,
+    usage: mappedUsage,
+    requestId: raw.request_id ?? raw.provider_request_id ?? null,
   };
 }
 
@@ -748,17 +842,50 @@ class MockApiClient implements ApiClient {
           reportsRequestId: false,
         },
       },
-      providers: [{
-        providerId: 'openai_compatible',
-        configurationStatus: 'not_configured',
-        baseUrlConfigured: false,
-        credentialConfigured: false,
-        defaultModelConfigured: false,
-        lastVerifiedAt: null,
-        verificationMessage: null,
-      }],
+      providers: [
+        {
+          adapterId: 'codex_chatgpt',
+          providerId: 'codex_chatgpt',
+          configurationStatus: 'not_configured',
+          baseUrlConfigured: false,
+          credentialConfigured: false,
+          defaultModelConfigured: false,
+          lastVerifiedAt: null,
+          verificationMessage: 'Mock fixture 不读取 ChatGPT 登录状态。',
+          loginStatus: 'unknown',
+          lastConnectionCheckAt: null,
+          lastConnectionCheckStatus: 'not_checked',
+          realGenerationVerified: null,
+          lastGenerationVerifiedAt: null,
+          codexVersion: null,
+          availableModels: null,
+          quota: null,
+        },
+        {
+          adapterId: 'openai_compatible',
+          providerId: 'openai_compatible',
+          configurationStatus: 'not_configured',
+          baseUrlConfigured: false,
+          credentialConfigured: false,
+          defaultModelConfigured: false,
+          lastVerifiedAt: null,
+          verificationMessage: null,
+          loginStatus: 'not_applicable',
+          lastConnectionCheckAt: null,
+          lastConnectionCheckStatus: 'not_checked',
+          realGenerationVerified: null,
+          lastGenerationVerifiedAt: null,
+          codexVersion: null,
+          availableModels: null,
+          quota: null,
+        },
+      ],
       source: 'fixture',
     });
+  }
+
+  async verifyModelExecution(_input: { adapterId: Exclude<ExecutionAdapterId, 'mock'>; check: 'login' | 'generation'; model?: string }): Promise<ModelExecutionVerification> {
+    throw new ApiError('Mock 数据模式不执行登录或真实生成检查，且不会切换到其他通道。', 409, 'VERIFICATION_UNAVAILABLE');
   }
 
   listDatasets(_projectId: string): Promise<Dataset[]> {
@@ -972,6 +1099,18 @@ class HttpApiClient implements ApiClient {
     return mapModelExecutionStatus(await this.request<RawModelExecutionStatus>('/model-execution/status'));
   }
 
+  async verifyModelExecution(input: { adapterId: Exclude<ExecutionAdapterId, 'mock'>; check: 'login' | 'generation'; model?: string }): Promise<ModelExecutionVerification> {
+    const payload = await this.request<RawModelExecutionVerification>('/model-execution/verify', {
+      method: 'POST',
+      body: {
+        adapter_id: input.adapterId,
+        check_type: input.check,
+        ...(input.check === 'generation' && input.model ? { model: input.model } : {}),
+      },
+    });
+    return mapModelExecutionVerification(payload);
+  }
+
   async listDatasets(_projectId: string): Promise<Dataset[]> {
     const payload = await this.request<RawDatasetList>('/datasets');
     return payload.items.map(mapDataset);
@@ -1010,6 +1149,16 @@ class HttpApiClient implements ApiClient {
   }
 
   async createEvaluationTask(_projectId: string, input: EvaluationTaskCreateInput): Promise<EvaluationTask> {
+    const generation = input.adapterId === 'codex_chatgpt'
+      ? { model: input.generation.model }
+      : {
+        model: input.generation.model,
+        temperature: input.generation.temperature,
+        top_p: input.generation.topP,
+        max_output_tokens: input.generation.maxOutputTokens,
+        stop: input.generation.stop,
+        seed: input.generation.seed,
+      };
     const payload = await this.request<RawEvaluationJob>('/evaluation-jobs', {
       method: 'POST',
       body: {
@@ -1019,14 +1168,7 @@ class HttpApiClient implements ApiClient {
         execution: {
           adapter_id: input.adapterId,
           prompt: { version: input.prompt.version, text: input.prompt.text },
-          generation: {
-            model: input.generation.model,
-            temperature: input.generation.temperature,
-            top_p: input.generation.topP,
-            max_output_tokens: input.generation.maxOutputTokens,
-            stop: input.generation.stop,
-            seed: input.generation.seed,
-          },
+          generation,
           context_policy: input.contextPolicy,
         },
         metrics: input.metrics ?? [],

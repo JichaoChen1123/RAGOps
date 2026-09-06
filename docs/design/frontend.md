@@ -384,3 +384,23 @@ type MetricPoint = {
 7. 成本图能追溯到模型、Token 用量、币种和计价版本；未知成本不按 0 统计。
 8. 任一聚合图表的导出或下钻都携带相同筛选口径、样本数和时间范围。
 
+## 13. 双通道模型运行前端（WOR-71）
+
+### 13.1 页面与关键交互
+
+- 全局运行状态弹窗：固定分开显示前端数据源、后端执行通道和外部调用总开关；按 `codex_chatgpt`、`openai_compatible` 展示配置、登录、最近检查、真实生成验证、版本、模型与额度。
+- 评测任务创建：P0，显式选择 `mock`、`codex_chatgpt` 或 `openai_compatible`，并输入或选择该通道模型；失败保持原通道，不自动回退。
+- 报告与样本诊断：P0，展示实际通道、请求/返回模型、模拟标记、usage、request ID 和成本；未知值保持未知。指标卡同时展示已评/排除数，部分样本结果标为“非整批”。
+- Codex 登录检查只读取主机登录状态，不生成；两个真实通道的小请求检查均需二次确认，分别提示账号额度或潜在费用。
+
+### 13.2 组件与 API 依赖
+
+| 组件/调用 | 依赖字段 | 安全约束 |
+| --- | --- | --- |
+| `ModelExecutionDialog` / `GET /api/v1/model-execution/status` | `adapter_id`、`configuration_status`、`login_status`、`last_connection_check`、`real_generation_verified`、`codex_version`、`available_models`、`quota` | 状态读取不探测、不生成；缺失字段显示未知 |
+| `ModelExecutionDialog` / `POST /api/v1/model-execution/verify` | 请求仅含 `adapter_id`、`check_type`、可选 `model`；响应含安全消息、时间、usage/request ID | 浏览器不接触密码、OAuth Token、API Key 或桥接 Token |
+| `EvaluationsPage` / `POST /api/v1/evaluation-jobs` | `execution.adapter_id`、Prompt、通道支持的 generation 字段、context policy | Codex 只发送模型字段；不支持参数不做隐式降级 |
+| `ReportPage`、`DiagnosisPage` | `run.adapter_id/provider_id/requested_model/actual_model/is_mock/usage/provider_request_id/cost/error` | 不从模型名推断真实/模拟；安全错误按 code 展示 |
+
+前端验证覆盖状态映射、三通道任务请求、登录/生成按钮、二次确认、额度错误脱敏、运行追踪字段和部分评测覆盖范围。离线测试不调用真实账号或模型。
+

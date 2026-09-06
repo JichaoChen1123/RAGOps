@@ -68,7 +68,7 @@ function sampleMarkdown(sample: SampleSummary): string {
   const citations = sample.citations.length === 0
     ? '- 引用：无记录'
     : sample.citations.map((citation) => `  - ${citation.marker} · resolved=${citation.resolved ?? '未知'} · supports_claim=${citation.supportsClaim ?? '未评估'} · target=${citation.targetId || '未知'}`).join('\n');
-  return `#### ${sample.sampleId}\n\n- 原始问题：${sample.question}\n- 参考答案：${sample.referenceAnswer ?? '未知'}\n- 本次回答：${sample.generatedAnswer ?? '未知'}\n- 历史回答：${sample.historicalAnswer ?? '无记录'}\n- 运行状态：${sample.runStatus}\n- 质量状态：${sample.qualityStatus}\n- 延迟：${sample.latencyMs === null ? '未知' : `${sample.latencyMs}ms`}\n- 错误：${sample.error ? `${sample.error.code} · ${sample.error.message}` : '无'}\n\n${contexts}\n\n${citations}`;
+  return `#### ${sample.sampleId}\n\n- 原始问题：${sample.question}\n- 参考答案：${sample.referenceAnswer ?? '未知'}\n- 本次回答：${sample.generatedAnswer ?? '未知'}\n- 历史回答：${sample.historicalAnswer ?? '无记录'}\n- 运行状态：${sample.runStatus}\n- 实际通道：${sample.run.adapterId ?? '未知'} / ${sample.run.providerId ?? '无或未知'}\n- 请求 / 返回模型：${sample.run.requestedModel ?? '未知'} / ${sample.run.actualModel ?? '未知'}\n- 模拟标记：${sample.run.isMock === null ? '未知' : sample.run.isMock ? '是' : '否'}\n- Usage：${sample.run.usage ? `${sample.run.usage.inputTokens} 输入 / ${sample.run.usage.outputTokens} 输出 / ${sample.run.usage.totalTokens} 总计` : '未知'}\n- Request ID：${sample.run.providerRequestId ?? '未知'}\n- 成本：${sample.run.cost === null ? '未知' : `$${sample.run.cost}`}\n- 质量状态：${sample.qualityStatus}\n- 延迟：${sample.latencyMs === null ? '未知' : `${sample.latencyMs}ms`}\n- 错误：${sample.error ? `${sample.error.code} · ${sample.error.message}` : '无'}\n\n${contexts}\n\n${citations}`;
 }
 
 export function ReportPage() {
@@ -104,6 +104,10 @@ export function ReportPage() {
   const filteredSamples = sampleFilter === 'all'
     ? report.samples
     : report.samples.filter((sample) => sample.reviewStatus === sampleFilter);
+  const evaluatedSamples = report.qualitySummary.evaluatedSampleCount;
+  const qualityCoverage = evaluatedSamples === null
+    ? '未知'
+    : `${evaluatedSamples} / ${report.executionSummary.totalCount}${evaluatedSamples < report.executionSummary.totalCount ? '（部分样本）' : ''}`;
 
   const exportReport = async (format: 'json' | 'markdown') => {
     setExporting(true);
@@ -144,7 +148,7 @@ export function ReportPage() {
         <div><span>任务生命周期</span><strong><StatusBadge value={report.task.status} /></strong></div>
         <div><span>执行结果</span><strong>{report.executionSummary.outcome ? <StatusBadge value={report.executionSummary.outcome} /> : '尚无结果'}</strong></div>
         <div><span>质量状态</span><strong><StatusBadge value={report.qualitySummary.status} /></strong></div>
-        <div><span>质量分</span><strong>{report.qualitySummary.score ?? '未知'}</strong></div>
+        <div><span>质量分 / 已评覆盖</span><strong>{report.qualitySummary.score ?? '未知'}</strong><small>{qualityCoverage}</small></div>
       </div>
       <section className={`verdict-card verdict-${report.verdict}`}>
         <div className="verdict-icon">{report.verdict === 'passed' ? <CheckCircle2 size={25} /> : <ShieldAlert size={25} />}</div>
@@ -171,11 +175,11 @@ export function ReportPage() {
         <div className="segmented sample-filters" aria-label="复核状态筛选"><button aria-pressed={sampleFilter === 'all'} type="button" onClick={() => setSampleFilter('all')}>全部 {report.samples.length}</button><button aria-pressed={sampleFilter === 'pending'} type="button" onClick={() => setSampleFilter('pending')}>待复核 {report.samples.filter((sample) => sample.reviewStatus === 'pending').length}</button><button aria-pressed={sampleFilter === 'confirmed'} type="button" onClick={() => setSampleFilter('confirmed')}>已确认 {report.samples.filter((sample) => sample.reviewStatus === 'confirmed').length}</button></div>
         {filteredSamples.length === 0 ? <EmptyState title="没有可展示的样本记录" description="终态报告仍然可查看执行与质量汇总；当前没有符合筛选条件的样本。" /> : sampleView === 'stack' ? <SampleStack samples={filteredSamples} projectId={projectId} taskId={taskId} /> : <div className="table-wrap">
           <table>
-            <thead><tr><th>原始问题</th><th>运行</th><th>质量</th><th>Recall@5</th><th>忠实性</th><th>引用支持</th><th>延迟 / 错误</th><th>复核</th><th /></tr></thead>
+            <thead><tr><th>原始问题</th><th>运行 / 模型追踪</th><th>质量</th><th>Recall@5</th><th>忠实性</th><th>引用支持</th><th>延迟 / 错误</th><th>复核</th><th /></tr></thead>
             <tbody>{filteredSamples.map((sample) => (
               <tr key={sample.id}>
                 <td className="question-cell"><strong>{sample.question}</strong><small>{sample.sampleId} · 参考：{sample.referenceAnswer ?? '未知'}</small></td>
-                <td><StatusBadge value={sample.runStatus} />{sample.isMock === true && <small>SIMULATED</small>}</td>
+                <td><StatusBadge value={sample.runStatus} />{sample.run.isMock === true && <small>SIMULATED</small>}<small><code>{sample.run.adapterId ?? '通道未知'}</code></small><small>{sample.run.requestedModel ?? '请求模型未知'} → {sample.run.actualModel ?? '返回模型未知'}</small><small>{sample.run.usage ? `${sample.run.usage.totalTokens} tokens` : 'usage 未知'} · {sample.run.cost === null ? '成本未知' : `$${sample.run.cost}`}</small><small>request ID：<code>{sample.run.providerRequestId ?? '未知'}</code></small></td>
                 <td><StatusBadge value={sample.qualityStatus} /></td>
                 <td>{formatScore(sample.recallAt5, sample.recallAt5Status)}</td>
                 <td>{formatScore(sample.faithfulness, sample.faithfulnessStatus)}</td>

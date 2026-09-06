@@ -10,7 +10,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import type { WorkspaceOutletContext } from '../components/WorkspaceShell';
 import { useApiResource } from '../hooks/useApiResource';
 import { formatDateTime } from '../lib/format';
-import type { Dataset, EvaluationTask, TaskStatus } from '../types';
+import type { Dataset, EvaluationTask, ExecutionAdapterId, ModelExecutionStatus, TaskStatus } from '../types';
 
 type TaskFilter = 'all' | TaskStatus;
 
@@ -24,6 +24,11 @@ const taskStatuses: { value: TaskFilter; label: string }[] = [
 ];
 
 const isTerminal = (status: TaskStatus) => status === 'completed' || status === 'failed' || status === 'cancelled';
+const adapterLabels: Record<ExecutionAdapterId, string> = {
+  mock: '模拟',
+  codex_chatgpt: 'Codex ChatGPT',
+  openai_compatible: 'OpenAI-compatible',
+};
 
 export function EvaluationsPage() {
   const { projectId = 'demo' } = useParams();
@@ -38,9 +43,11 @@ export function EvaluationsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [modelStatus, setModelStatus] = useState<ModelExecutionStatus | null>(null);
+  const [modelStatusError, setModelStatusError] = useState<string | null>(null);
   const [draft, setDraft] = useState({
     datasetId: apiMode === 'mock' ? mockDatasets.find((item) => item.status === 'ready')?.id ?? '' : '',
-    adapterId: 'mock' as 'mock' | 'openai_compatible',
+    adapterId: 'mock' as ExecutionAdapterId,
     contextPolicy: 'dataset_contexts' as 'dataset_contexts' | 'none' | 'retrieval',
     model: 'mock-ragops-v1',
     promptVersion: 'support-rag@v12',
@@ -73,6 +80,19 @@ export function EvaluationsPage() {
       setFeedback(error instanceof Error ? `数据集选项加载失败：${error.message}` : '数据集选项加载失败');
     });
   }, [projectId]);
+
+  useEffect(() => {
+    let active = true;
+    void apiClient.getModelExecutionStatus().then((status) => {
+      if (active) {
+        setModelStatus(status);
+        setModelStatusError(null);
+      }
+    }).catch((error: unknown) => {
+      if (active) setModelStatusError(error instanceof Error ? error.message : '模型通道状态读取失败');
+    });
+    return () => { active = false; };
+  }, []);
 
   const allTasks = localTasks ?? (state.status === 'success' ? state.data : []);
   const tasks = useMemo(() => allTasks.filter((task) => {
@@ -110,7 +130,7 @@ export function EvaluationsPage() {
     try {
       const created = await apiClient.createEvaluationTask(projectId, {
         datasetId: dataset.id,
-        name: `${dataset.name} · ${draft.adapterId === 'mock' ? '模拟' : 'OpenAI 兼容'}评测`,
+        name: `${dataset.name} · ${adapterLabels[draft.adapterId]}评测`,
         adapterId: draft.adapterId,
         prompt: { version: draft.promptVersion, text: draft.promptText },
         generation: {
@@ -138,13 +158,17 @@ export function EvaluationsPage() {
     }
   };
 
-  const changeAdapter = (adapterId: 'mock' | 'openai_compatible') => {
+  const changeAdapter = (adapterId: ExecutionAdapterId) => {
+    const provider = modelStatus?.providers.find((item) => item.adapterId === adapterId || item.providerId === adapterId);
     setDraft((current) => ({
       ...current,
       adapterId,
-      model: adapterId === 'mock' ? 'mock-ragops-v1' : 'demo-openai-compatible-model',
+      model: adapterId === 'mock' ? 'mock-ragops-v1' : provider?.availableModels?.[0] ?? '',
     }));
   };
+
+  const selectedProvider = modelStatus?.providers.find((item) => item.adapterId === draft.adapterId || item.providerId === draft.adapterId);
+  const modelOptions = selectedProvider?.availableModels ?? [];
 
   return (
     <>
@@ -205,17 +229,19 @@ export function EvaluationsPage() {
         title="新建评测任务"
         eyebrow={apiMode === 'mock' ? 'MOCK FRONTEND' : 'API EVALUATION'}
         onClose={() => setCreateOpen(false)}
-        footer={<><button className="button button-secondary" type="button" onClick={() => setCreateOpen(false)}>取消</button><button className="button button-primary" type="submit" form="create-evaluation-form" disabled={saving || availableDatasets.length === 0}><Play size={15} />创建评测任务</button></>}
+        footer={<><button className="button button-secondary" type="button" onClick={() => setCreateOpen(false)}>取消</button><button className="button button-primary" type="submit" form="create-evaluation-form" disabled={saving || availableDatasets.length === 0 || draft.model.trim().length === 0}><Play size={15} />创建评测任务</button></>}
       >
         <form className="form-grid" id="create-evaluation-form" onSubmit={createTask}>
           <label>已发布数据集<select aria-label="选择评测数据集" value={draft.datasetId} onChange={(event) => setDraft((current) => ({ ...current, datasetId: event.target.value }))}>{availableDatasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name} · {dataset.sampleCount} 条</option>)}</select></label>
-          <label>后端执行器<select aria-label="选择后端执行器" value={draft.adapterId} onChange={(event) => changeAdapter(event.target.value as 'mock' | 'openai_compatible')}><option value="mock">mock（离线模拟）</option><option value="openai_compatible">openai_compatible（需后端配置）</option></select></label>
+          <label>后端执行通道<select aria-label="选择后端执行通道" value={draft.adapterId} onChange={(event) => changeAdapter(event.target.value as ExecutionAdapterId)}><option value="mock">mock（离线模拟）</option><option value="codex_chatgpt">codex_chatgpt（ChatGPT 登录）</option><option value="openai_compatible">openai_compatible（Chat Completions）</option></select></label>
           <label>上下文策略<select aria-label="选择上下文策略" value={draft.contextPolicy} onChange={(event) => setDraft((current) => ({ ...current, contextPolicy: event.target.value as typeof current.contextPolicy }))}><option value="dataset_contexts">dataset_contexts（给定上下文）</option><option value="none">none（不提供上下文）</option><option value="retrieval">retrieval（本阶段不可用）</option></select></label>
-          <label>请求模型<input aria-label="请求模型" value={draft.model} onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))} /></label>
+          <label>请求模型<input required aria-label="请求模型" list="available-evaluation-models" placeholder={draft.adapterId === 'mock' ? undefined : '输入或选择后端允许的模型 ID'} value={draft.model} onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))} /><datalist id="available-evaluation-models">{modelOptions.map((model) => <option key={model} value={model} />)}</datalist></label>
           <label>Prompt 版本<input aria-label="Prompt 版本" value={draft.promptVersion} onChange={(event) => setDraft((current) => ({ ...current, promptVersion: event.target.value }))} /></label>
           <label className="field-full">Prompt 文本<textarea required aria-label="Prompt 文本" value={draft.promptText} onChange={(event) => setDraft((current) => ({ ...current, promptText: event.target.value }))} /></label>
         </form>
-        <p className="form-hint">{availableDatasets.length === 0 ? '当前没有已发布数据集；请先完成样本导入和发布。' : draft.adapterId === 'openai_compatible' ? '选择真实适配器只会提交给后端校验；前端不持有凭据，也不会探测或自动回退到 mock。' : 'Mock 执行器不会发外部请求；任务执行成功后，未配置质量门仍显示“质量未评估 / 分数未知”。'}</p>
+        <div className="task-channel-summary field-full" aria-label="任务通道摘要"><span><small>前端数据</small><strong>{apiMode === 'mock' ? 'Mock fixture' : 'API 数据'}</strong></span><span><small>本任务执行通道</small><strong>{draft.adapterId}</strong></span><span><small>配置状态</small><strong>{selectedProvider?.configurationStatus ?? (draft.adapterId === 'mock' ? '内置可用' : '未知')}</strong></span><span><small>真实生成</small><strong>{draft.adapterId === 'mock' ? '不适用' : selectedProvider?.realGenerationVerified === true ? '已验证' : selectedProvider?.realGenerationVerified === false ? '未验证' : '未知'}</strong></span></div>
+        {modelStatusError && <p className="form-hint">通道状态读取失败：{modelStatusError}。仍可显式提交，后端将进行最终校验；前端不会猜测通道可用。</p>}
+        <p className="form-hint">{availableDatasets.length === 0 ? '当前没有已发布数据集；请先完成样本导入和发布。' : draft.adapterId === 'mock' ? 'Mock 通道不会发外部请求；任务执行成功后，未配置质量门仍显示“质量未评估 / 分数未知”。' : draft.adapterId === 'codex_chatgpt' ? 'Codex ChatGPT 通道由 Windows 主机登录和后端桥接执行；浏览器不接触 OAuth Token，失败也不会回退到其他通道。' : 'OpenAI-compatible 通道只提交模型 ID 和生成参数；浏览器不持有 API Key，失败也不会回退到 mock。'}</p>
       </Dialog>
       <Toast message={feedback} onDismiss={() => setFeedback(null)} />
     </>
