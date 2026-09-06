@@ -52,9 +52,22 @@ def run_codex_bridge(args: argparse.Namespace) -> None:
     if args.host not in {"127.0.0.1", "::1", "localhost"} and not args.allow_non_loopback:
         raise SystemExit("Non-loopback binding requires --allow-non-loopback and bridge authentication.")
     default_root = Path(os.environ.get("LOCALAPPDATA", Path.home())) / "RAGOps" / "codex-sandbox"
+    default_codex_home = (
+        Path(os.environ.get("LOCALAPPDATA", Path.home())) / "RAGOps" / "codex-bridge-home"
+    )
+    codex_home = Path(args.codex_home or default_codex_home).resolve()
+    daily_homes = {Path.home().joinpath(".codex").resolve()}
+    inherited_codex_home = os.environ.get("CODEX_HOME")
+    if inherited_codex_home:
+        daily_homes.add(Path(inherited_codex_home).resolve())
+    if codex_home in daily_homes:
+        raise SystemExit(
+            "The bridge requires a dedicated CODEX_HOME; do not use the daily Codex config home."
+        )
     config = BridgeConfig(
         access_token=settings.codex_bridge_token,
         sandbox_root=Path(args.sandbox_root or default_root),
+        codex_home=codex_home,
         codex_executable=args.codex_executable,
         request_timeout_seconds=args.timeout_seconds,
     )
@@ -81,6 +94,7 @@ def main() -> None:
     bridge.add_argument("--host", default="127.0.0.1")
     bridge.add_argument("--port", type=int, default=8765)
     bridge.add_argument("--sandbox-root")
+    bridge.add_argument("--codex-home")
     bridge.add_argument("--codex-executable", default="codex")
     bridge.add_argument("--timeout-seconds", type=float, default=180.0)
     bridge.add_argument("--allow-non-loopback", action="store_true")

@@ -7,7 +7,7 @@
 | 通道 | 用途 | 凭据位置 | 当前验证方式 |
 | --- | --- | --- | --- |
 | `mock` | 离线开发与回归测试 | 无 | 自动化测试，不联网 |
-| `codex_chatgpt` | 使用账号可用的 Codex 订阅权益 | Windows 主机上的 Codex 登录存储 | 官方 Codex App Server，经认证本机桥接 |
+| `codex_chatgpt` | 使用账号可用的 Codex 订阅权益 | Windows 主机上的桥接专用 Codex 登录存储 | 官方 Codex App Server，经认证本机桥接 |
 | `openai_compatible` | 一个可配置的 Chat Completions 提供方 | 后端 `.env` | 用户主动发起最小生成请求 |
 
 `VITE_API_MODE=api` 只表示浏览器连接 RAGOps 后端。它不代表模型已经配置、登录或完成真实生成验证。
@@ -40,29 +40,30 @@ Docker 容器不会自动拥有 Windows 主机的 Codex 登录状态。因此 `c
 - 同一时间只执行一个 Codex 请求；每个样本新建独立临时会话。
 - 审批为 `never`，沙箱为只读，网络关闭，动态工具、MCP、插件、应用、浏览器、计算机控制、多智能体、记忆和 shell 功能关闭。
 - Codex 子进程不会继承 `RAGOPS_*`、`OPENAI_API_KEY` 等模型服务密钥环境变量。
+- Codex 子进程强制使用 `%LOCALAPPDATA%\RAGOps\codex-bridge-home`，不读取日常 `%USERPROFILE%\.codex` 的 MCP、插件和项目配置。
 - 只接收唯一且标记为 `final_answer` 的 `agentMessage` 结构化答案；工具类事件或未知控制事件会使本次运行失败。
 - 每次生成使用一个新的临时空目录，结束后自动删除；目录中不放数据集、参考答案或业务仓库。
-- 桥接会校验 App Server 实际返回的工作目录、指令来源、审批策略、沙箱、联网、临时会话和模型，配置未真正生效时拒绝答案。
+- 桥接会通过 `config/read` 和 `mcpServerStatus/list` 校验最终生效的配置层、禁用开关及 MCP 注册表，再校验 App Server 实际返回的工作目录、指令来源、审批策略、沙箱、联网、临时会话和模型。只检查发出的参数不算通过。
 
 限制：当前 App Server 的线程契约可限制只读、联网和功能开关，但不能证明操作系统层面“只能读取这个空目录”。RAGOps 会在发现指令文件或工具事件时失败关闭；对隔离要求更高时，应把桥接放入单独 Windows 用户、虚拟机或受控专用运行环境。
 
 ## Windows 主机准备
 
-在 PowerShell 中检查 Codex 并完成官方 ChatGPT 登录：
+在仓库根目录的 PowerShell 中检查 Codex，并为桥接专用目录完成官方 ChatGPT 登录：
 
 ```powershell
 codex --version
-codex login status
-codex login
-codex login status
+.\scripts\manage_codex_bridge_login.ps1 -Action Status
+.\scripts\manage_codex_bridge_login.ps1 -Action Login
+.\scripts\manage_codex_bridge_login.ps1 -Action Status
 ```
 
 桥接当前要求 Codex CLI `0.153.4` 或更高版本；启动脚本会再次检查版本，不满足时直接退出，不会尝试模型调用。
 
-登录界面选择 ChatGPT 登录，不要选择 API Key。登录失效时重新运行 `codex login`；退出使用：
+登录界面选择 ChatGPT 登录，不要选择 API Key。脚本只在 `%LOCALAPPDATA%\RAGOps\codex-bridge-home` 中运行官方登录流程，不复制日常认证文件，也不改变日常 Codex 的配置或登录。登录失效时重新运行 `-Action Login`；只退出桥接专用登录使用：
 
 ```powershell
-codex logout
+.\scripts\manage_codex_bridge_login.ps1 -Action Logout
 ```
 
 RAGOps 不会在启动、打开页面或读取状态时自动生成内容。
@@ -96,6 +97,8 @@ RAGOPS_CODEX_DEFAULT_MODEL=
 uv sync --project backend --extra dev --frozen
 .\scripts\start_codex_bridge.ps1 -Docker
 ```
+
+启动输出会显示桥接专用目录。每个 App Server 进程都将 `CODEX_HOME` 强制指向该目录，并在读取账号信息前验证有效配置中 `mcp_servers`、插件注册和相关功能开关均为空或关闭，且 MCP 运行注册表为空。验证失败不会调用模型。
 
 `-Docker` 会监听 `0.0.0.0`，因为 Docker Desktop 通过 `host.docker.internal` 访问主机。必须保持 Windows Firewall 开启；不要在路由器映射端口 `8765`，也不要把它部署成共享或公网服务。
 
@@ -149,8 +152,8 @@ RAGOPS_OPENAI_COMPAT_DEFAULT_MODEL=<服务商模型 ID>
 | 状态或错误 | 含义 | 处理 |
 | --- | --- | --- |
 | `CODEX_NOT_INSTALLED` | 主机找不到 Codex | 检查 `codex --version` 和 PATH，重启桥接 |
-| `CODEX_CHATGPT_NOT_AUTHENTICATED` | 未登录 | 在主机运行 `codex login` |
-| `CODEX_CHATGPT_WRONG_AUTH_MODE` | 当前是 API Key 等非 ChatGPT 认证 | `codex logout` 后用 ChatGPT 方式登录 |
+| `CODEX_CHATGPT_NOT_AUTHENTICATED` | 桥接专用目录未登录 | 运行 `manage_codex_bridge_login.ps1 -Action Login` |
+| `CODEX_CHATGPT_WRONG_AUTH_MODE` | 桥接专用目录是 API Key 等非 ChatGPT 认证 | 用脚本退出后重新选择 ChatGPT 登录 |
 | `PROVIDER_AUTHENTICATION_FAILED` | 登录失效或 API Key 被拒绝 | 重新登录或检查后端 `.env` |
 | `CODEX_CHATGPT_USAGE_LIMITED` | 账号 Codex 权益当前受限 | 等待额度恢复；不会切换到付费 API |
 | `PROVIDER_RATE_LIMITED` | 提供方限流 | 等待后重试；重试次数有上限 |
@@ -177,7 +180,14 @@ RAGOPS_OPENAI_COMPAT_DEFAULT_MODEL=<服务商模型 ID>
 | `THREAD_INSTRUCTION_SOURCES_PRESENT` | App Server 实际加载了额外指令文件 |
 | `THREAD_MODEL_MISMATCH` | 实际线程模型与请求模型不一致，禁止自动回退 |
 | `THREAD_ID_MISSING` | `thread/start` 未返回可关联的线程 ID |
-| `TURN_FORBIDDEN_ITEM_TYPE` / `TURN_FORBIDDEN_METHOD` | 检测到命令、文件、联网、MCP 等禁止能力 |
+| `MCP_SERVER_STARTUP_STATUS_OBSERVED` | 收到 MCP 服务启动状态通知，证明隔离环境仍尝试加载服务；不是工具调用 |
+| `MCP_EFFECTIVE_CONFIG_UNVERIFIABLE` | `config/read` 缺少必须验证的 MCP、插件、功能开关或配置层字段 |
+| `MCP_EFFECTIVE_CONFIG_NOT_EMPTY` | 最终生效配置仍包含 MCP 服务或插件配置 |
+| `MCP_EFFECTIVE_FEATURE_NOT_DISABLED` | MCP/插件相关功能开关没有在最终配置中关闭 |
+| `MCP_CONFIG_SOURCE_MISMATCH` | 最终用户配置层不属于桥接专用目录，或加载了项目配置层 |
+| `MCP_SERVER_REGISTRY_UNVERIFIABLE` / `MCP_SERVER_REGISTRY_NOT_EMPTY` | MCP 注册表无法验证或仍存在已注册服务 |
+| `MCP_TOOL_CALL_FORBIDDEN` | 检测到实际 MCP 工具调用或 MCP 工具条目 |
+| `TURN_FORBIDDEN_ITEM_TYPE` / `TURN_FORBIDDEN_METHOD` | 检测到其他命令、文件、联网等禁止能力 |
 | `TURN_PROTOCOL_NOTIFICATION_UNRECOGNIZED` | 未知通知；保持停止，但不宣称已调用工具 |
 
 升级 Codex 后可在 Windows PowerShell 生成本机版本的官方协议 Schema：
@@ -189,7 +199,17 @@ codex app-server generate-json-schema --experimental --out $schemaDir
 Get-ChildItem -LiteralPath $schemaDir
 ```
 
-当前实现按 `codex-cli 0.153.4` Schema 核对了 `ThreadStartResponse` 和 `ServerNotification`。已确认 `configWarning` 是无执行副作用的配置通知并显式忽略；其他未知事件仍 fail-closed。
+当前实现按 `codex-cli 0.153.4` Schema 核对了 `ThreadStartResponse`、`ConfigReadResponse`、`ListMcpServerStatusResponse` 和 `ServerNotification`。`remoteControl/status/changed` 与 `configWarning` 只按精确事件名兼容；`mcpServer/startupStatus/updated` 单独诊断服务名、状态、failure reason 和 thread ID，但仍停止本次运行。其他未知事件继续 fail-closed，真实 MCP 工具调用继续拦截。
+
+## 更新后只做一次真实验证
+
+```powershell
+git checkout main
+git pull
+.\scripts\manage_codex_bridge_login.ps1 -Action Status
+```
+
+如果显示未登录，只运行一次 `-Action Login`。然后关闭旧 Bridge 窗口，在终端 1 重新运行 `start_codex_bridge.ps1 -Docker`；终端 2 运行 `docker compose up --build`。网页先点“检查登录”，确认成功后只点一次“真实小请求验证”。失败时只提供新的 `reason_code` 和 `diagnostic_id`，不要连续重试，也不要发送登录文件或令牌。
 
 ## 恢复 mock
 

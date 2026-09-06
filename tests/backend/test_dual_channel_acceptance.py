@@ -328,6 +328,7 @@ def _bridge_args(tmp_path: Path, **overrides: object) -> argparse.Namespace:
         "host": "127.0.0.1",
         "port": 18765,
         "sandbox_root": str(tmp_path / "sandbox"),
+        "codex_home": str(tmp_path / "bridge-codex-home"),
         "codex_executable": "codex-test",
         "timeout_seconds": 5.0,
         "allow_non_loopback": False,
@@ -351,6 +352,11 @@ def test_codex_bridge_cli_fails_closed_before_server_start(
     )
     with pytest.raises(SystemExit, match="Non-loopback binding"):
         ragops_cli.run_codex_bridge(_bridge_args(tmp_path, host="0.0.0.0"))
+
+    with pytest.raises(SystemExit, match="dedicated CODEX_HOME"):
+        ragops_cli.run_codex_bridge(
+            _bridge_args(tmp_path, codex_home=str(Path.home() / ".codex"))
+        )
 
     monkeypatch.setattr(ragops_cli, "read_codex_version", lambda _executable: (0, 153, 3))
     with pytest.raises(SystemExit, match="0.153.4 or newer"):

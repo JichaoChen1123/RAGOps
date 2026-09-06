@@ -104,6 +104,7 @@ _IGNORED_TURN_NOTIFICATIONS = {
     "item/reasoning/summaryTextDelta",
     "item/reasoning/textDelta",
     "model/verification",
+    "remoteControl/status/changed",
     "thread/started",
     "thread/status/changed",
     "turn/started",
@@ -119,9 +120,21 @@ _BLOCKED_METHOD_PREFIXES = (
     "item/imageView/",
     "item/mcpToolCall/",
     "item/webSearch/",
-    "mcpServer/",
     "process/",
     "tool/",
+)
+
+_MCP_STARTUP_STATUS_METHOD = "mcpServer/startupStatus/updated"
+_MCP_TOOL_METHODS = {"mcpServer/tool/call"}
+_MCP_FEATURES = (
+    "apps",
+    "enable_mcp_apps",
+    "plugin_sharing",
+    "plugins",
+    "recommended_plugins",
+    "remote_plugin",
+    "skill_mcp_dependency_install",
+    "tool_call_mcp_elicitation",
 )
 
 
@@ -135,6 +148,10 @@ _SAFE_DIAGNOSTIC_FIELDS = {
     "phase",
     "rpc_id",
     "rpc_method",
+    "server_name",
+    "server_status",
+    "failure_reason",
+    "config_source",
     "source_count",
     "stage",
     "state",
@@ -142,6 +159,7 @@ _SAFE_DIAGNOSTIC_FIELDS = {
     "turn_id",
     "value_type",
 }
+_SAFE_NULLABLE_DIAGNOSTIC_FIELDS = {"failure_reason", "thread_id"}
 _SAFE_DIAGNOSTIC_VALUE = re.compile(r"[A-Za-z0-9_.:/-]{1,200}\Z")
 
 
@@ -183,8 +201,12 @@ def _safe_diagnostics(value: dict[str, Any] | None) -> dict[str, Any]:
         return {}
     result: dict[str, Any] = {}
     for key in _SAFE_DIAGNOSTIC_FIELDS:
+        if key not in value:
+            continue
         item = value.get(key)
-        if isinstance(item, str):
+        if item is None and key in _SAFE_NULLABLE_DIAGNOSTIC_FIELDS:
+            result[key] = None
+        elif isinstance(item, str):
             result[key] = item if _SAFE_DIAGNOSTIC_VALUE.fullmatch(item) else "<redacted>"
         elif isinstance(item, (bool, int)) and not isinstance(item, float):
             result[key] = item
@@ -220,6 +242,38 @@ def _notification_diagnostics(
     return diagnostics
 
 
+def _mcp_startup_diagnostics(message: dict[str, Any], *, stage: str) -> dict[str, Any]:
+    diagnostics = _notification_diagnostics(message, stage=stage)
+    params = message.get("params")
+    if not isinstance(params, dict):
+        return diagnostics
+    diagnostics["server_name"] = params.get("name")
+    diagnostics["server_status"] = params.get("status")
+    diagnostics["failure_reason"] = params.get("failureReason")
+    diagnostics["thread_id"] = params.get("threadId")
+    return diagnostics
+
+
+def _raise_for_mcp_startup_notification(message: dict[str, Any], *, stage: str) -> None:
+    if message.get("method") != _MCP_STARTUP_STATUS_METHOD:
+        return
+    raise bridge_error(
+        "CODEX_ISOLATION_VIOLATION",
+        reason_code="MCP_SERVER_STARTUP_STATUS_OBSERVED",
+        diagnostics=_mcp_startup_diagnostics(message, stage=stage),
+    )
+
+
+def _forbidden_method_reason(method: object) -> str | None:
+    if method in _MCP_TOOL_METHODS or (
+        isinstance(method, str) and method.startswith("item/mcpToolCall/")
+    ):
+        return "MCP_TOOL_CALL_FORBIDDEN"
+    if isinstance(method, str) and method.startswith(_BLOCKED_METHOD_PREFIXES):
+        return "TURN_FORBIDDEN_METHOD"
+    return None
+
+
 class JsonRpcProcess:
     """Line-delimited JSON-RPC connection to one short-lived App Server process."""
 
@@ -228,10 +282,12 @@ class JsonRpcProcess:
         *,
         executable: str,
         cwd: Path,
+        codex_home: Path,
         process_factory: Callable[..., subprocess.Popen[str]] = subprocess.Popen,
     ) -> None:
         self.executable = executable
         self.cwd = cwd
+        self.codex_home = codex_home.resolve()
         self.process_factory = process_factory
         self.process: subprocess.Popen[str] | None = None
         self._next_id = 1
@@ -241,6 +297,7 @@ class JsonRpcProcess:
 
     def __enter__(self) -> JsonRpcProcess:
         self.cwd.mkdir(parents=True, exist_ok=True)
+        self.codex_home.mkdir(parents=True, exist_ok=True)
         command = [
             self.executable,
             "app-server",
@@ -258,6 +315,7 @@ class JsonRpcProcess:
         for name in list(child_environment):
             if name.upper().startswith("RAGOPS_") or name.upper() in _SENSITIVE_CHILD_ENVIRONMENT:
                 child_environment.pop(name, None)
+        child_environment["CODEX_HOME"] = str(self.codex_home)
         try:
             self.process = self.process_factory(
                 command,
@@ -326,6 +384,7 @@ class JsonRpcProcess:
         deadline = time.monotonic() + timeout_seconds
         while True:
             incoming = self._read_until(deadline)
+            _raise_for_mcp_startup_notification(incoming, stage="rpc_response")
             if incoming.get("id") == request_id:
                 if "error" in incoming:
                     raise _rpc_error(incoming["error"])
@@ -348,6 +407,7 @@ class JsonRpcProcess:
         if self._pending_notifications:
             return self._pending_notifications.popleft()
         incoming = self._read_until(deadline)
+        _raise_for_mcp_startup_notification(incoming, stage="turn_stream")
         if "id" in incoming and isinstance(incoming.get("method"), str):
             self._reject_server_request(incoming)
             raise bridge_error(
@@ -423,17 +483,19 @@ class CodexAppServerRunner:
         *,
         executable: str,
         sandbox_root: Path,
+        codex_home: Path,
         timeout_seconds: float,
         connection_factory: Callable[..., JsonRpcProcess] = JsonRpcProcess,
     ) -> None:
         self.executable = executable
         self.sandbox_root = sandbox_root.resolve()
+        self.codex_home = codex_home.resolve()
         self.timeout_seconds = timeout_seconds
         self.connection_factory = connection_factory
 
     def inspect(self) -> dict[str, Any]:
         with self._connection() as rpc:
-            initialized = rpc.initialize(self.timeout_seconds)
+            initialized = self._initialize_and_verify(rpc, self.sandbox_root)
             account = rpc.request(
                 "account/read", {"refreshToken": True}, timeout_seconds=self.timeout_seconds
             )
@@ -485,7 +547,7 @@ class CodexAppServerRunner:
     def _generate_in_sandbox(self, request: dict[str, Any], sandbox: Path) -> dict[str, Any]:
         started = time.monotonic()
         with self._connection(sandbox) as rpc:
-            rpc.initialize(self.timeout_seconds)
+            self._initialize_and_verify(rpc, sandbox)
             account = rpc.request(
                 "account/read", {"refreshToken": True}, timeout_seconds=self.timeout_seconds
             )
@@ -581,6 +643,7 @@ class CodexAppServerRunner:
         while True:
             notification = rpc.next_notification(deadline)
             method = notification.get("method")
+            _raise_for_mcp_startup_notification(notification, stage="turn_stream")
             params = notification.get("params")
             if not isinstance(params, dict):
                 continue
@@ -592,9 +655,14 @@ class CodexAppServerRunner:
                     raise bridge_error("CODEX_RESPONSE_INVALID")
                 item_type = item.get("type")
                 if item_type not in {"userMessage", "reasoning", "agentMessage", "plan"}:
+                    reason_code = (
+                        "MCP_TOOL_CALL_FORBIDDEN"
+                        if item_type == "mcpToolCall"
+                        else "TURN_FORBIDDEN_ITEM_TYPE"
+                    )
                     raise bridge_error(
                         "CODEX_ISOLATION_VIOLATION",
-                        reason_code="TURN_FORBIDDEN_ITEM_TYPE",
+                        reason_code=reason_code,
                         diagnostics=_notification_diagnostics(notification, stage="turn_stream"),
                     )
                 if item_type == "agentMessage" and method == "item/completed":
@@ -634,10 +702,10 @@ class CodexAppServerRunner:
                 raise _turn_error(params.get("error"))
             elif method in _IGNORED_TURN_NOTIFICATIONS:
                 continue
-            elif isinstance(method, str) and method.startswith(_BLOCKED_METHOD_PREFIXES):
+            elif reason_code := _forbidden_method_reason(method):
                 raise bridge_error(
                     "CODEX_ISOLATION_VIOLATION",
-                    reason_code="TURN_FORBIDDEN_METHOD",
+                    reason_code=reason_code,
                     diagnostics=_notification_diagnostics(notification, stage="turn_stream"),
                 )
             else:
@@ -695,7 +763,220 @@ class CodexAppServerRunner:
         return _safe_rate_limits(response)
 
     def _connection(self, cwd: Path | None = None) -> JsonRpcProcess:
-        return self.connection_factory(executable=self.executable, cwd=cwd or self.sandbox_root)
+        return self.connection_factory(
+            executable=self.executable,
+            cwd=cwd or self.sandbox_root,
+            codex_home=self.codex_home,
+        )
+
+    def _initialize_and_verify(
+        self, rpc: JsonRpcProcess, cwd: Path
+    ) -> dict[str, Any]:
+        initialized = rpc.initialize(self.timeout_seconds)
+        effective = rpc.request(
+            "config/read",
+            {"cwd": str(cwd), "includeLayers": True},
+            timeout_seconds=self.timeout_seconds,
+        )
+        _validate_effective_config(effective, codex_home=self.codex_home)
+        registry = rpc.request(
+            "mcpServerStatus/list",
+            {"limit": 100, "detail": "toolsAndAuthOnly"},
+            timeout_seconds=self.timeout_seconds,
+        )
+        _validate_mcp_registry(registry)
+        return initialized
+
+
+def _validate_effective_config(response: dict[str, Any], *, codex_home: Path) -> None:
+    config = response.get("config")
+    if not isinstance(config, dict):
+        _raise_unverifiable_config(response, "config", config)
+
+    mcp_servers = config.get("mcp_servers")
+    if not isinstance(mcp_servers, dict):
+        _raise_unverifiable_config(config, "mcp_servers", mcp_servers)
+    if mcp_servers:
+        server_name = _first_string_key(mcp_servers)
+        raise bridge_error(
+            "CODEX_ISOLATION_VIOLATION",
+            reason_code="MCP_EFFECTIVE_CONFIG_NOT_EMPTY",
+            diagnostics={
+                "stage": "effective_config_validation",
+                "field": "mcp_servers",
+                "state": "non_empty",
+                "source_count": len(mcp_servers),
+                "server_name": server_name,
+                "config_source": _config_source(response.get("origins"), server_name),
+            },
+        )
+
+    plugins = config.get("plugins")
+    if not isinstance(plugins, dict):
+        _raise_unverifiable_config(config, "plugins", plugins)
+    if plugins:
+        raise bridge_error(
+            "CODEX_ISOLATION_VIOLATION",
+            reason_code="MCP_EFFECTIVE_CONFIG_NOT_EMPTY",
+            diagnostics={
+                "stage": "effective_config_validation",
+                "field": "plugins",
+                "state": "non_empty",
+                "source_count": len(plugins),
+                "config_source": _config_source(response.get("origins"), "plugins"),
+            },
+        )
+
+    features = config.get("features")
+    if not isinstance(features, dict):
+        _raise_unverifiable_config(config, "features", features)
+    for name in _MCP_FEATURES:
+        if name not in features:
+            raise bridge_error(
+                "CODEX_ISOLATION_VIOLATION",
+                reason_code="MCP_EFFECTIVE_CONFIG_UNVERIFIABLE",
+                diagnostics={
+                    "stage": "effective_config_validation",
+                    "field": f"features.{name}",
+                    "state": "missing",
+                },
+            )
+        if features[name] is not False:
+            raise bridge_error(
+                "CODEX_ISOLATION_VIOLATION",
+                reason_code="MCP_EFFECTIVE_FEATURE_NOT_DISABLED",
+                diagnostics={
+                    "stage": "effective_config_validation",
+                    "field": f"features.{name}",
+                    "state": "mismatch",
+                    "actual": features[name],
+                    "expected": False,
+                },
+            )
+
+    layers = response.get("layers")
+    if not isinstance(layers, list):
+        _raise_unverifiable_config(response, "layers", layers)
+    user_layer_seen = False
+    for layer in layers:
+        if not isinstance(layer, dict) or not isinstance(layer.get("name"), dict):
+            _raise_unverifiable_config(response, "layers.name", layer)
+        source = layer["name"]
+        source_type = source.get("type")
+        if source_type == "project":
+            raise bridge_error(
+                "CODEX_ISOLATION_VIOLATION",
+                reason_code="MCP_CONFIG_SOURCE_MISMATCH",
+                diagnostics={
+                    "stage": "effective_config_validation",
+                    "field": "layers.project",
+                    "state": "present",
+                    "matches": False,
+                    "config_source": "project",
+                },
+            )
+        if source_type != "user":
+            continue
+        user_layer_seen = True
+        config_file = source.get("file")
+        if not isinstance(config_file, str):
+            _raise_unverifiable_config(source, "layers.user.file", config_file)
+        if not _path_is_within(Path(config_file), codex_home):
+            raise bridge_error(
+                "CODEX_ISOLATION_VIOLATION",
+                reason_code="MCP_CONFIG_SOURCE_MISMATCH",
+                diagnostics={
+                    "stage": "effective_config_validation",
+                    "field": "layers.user.file",
+                    "state": "mismatch",
+                    "matches": False,
+                    "config_source": "user",
+                },
+            )
+    if not user_layer_seen:
+        raise bridge_error(
+            "CODEX_ISOLATION_VIOLATION",
+            reason_code="MCP_EFFECTIVE_CONFIG_UNVERIFIABLE",
+            diagnostics={
+                "stage": "effective_config_validation",
+                "field": "layers.user",
+                "state": "missing",
+            },
+        )
+
+
+def _raise_unverifiable_config(
+    container: dict[str, Any], field: str, value: object
+) -> None:
+    state = "missing" if field.rsplit(".", 1)[-1] not in container or value is None else "invalid_type"
+    raise bridge_error(
+        "CODEX_ISOLATION_VIOLATION",
+        reason_code="MCP_EFFECTIVE_CONFIG_UNVERIFIABLE",
+        diagnostics={
+            "stage": "effective_config_validation",
+            "field": field,
+            "state": state,
+            "value_type": type(value).__name__,
+        },
+    )
+
+
+def _validate_mcp_registry(response: dict[str, Any]) -> None:
+    data = response.get("data")
+    if not isinstance(data, list):
+        state = "missing" if "data" not in response or data is None else "invalid_type"
+        raise bridge_error(
+            "CODEX_ISOLATION_VIOLATION",
+            reason_code="MCP_SERVER_REGISTRY_UNVERIFIABLE",
+            diagnostics={
+                "stage": "mcp_registry_validation",
+                "field": "data",
+                "state": state,
+                "value_type": type(data).__name__,
+            },
+        )
+    if not data:
+        return
+    first = data[0] if isinstance(data[0], dict) else {}
+    raise bridge_error(
+        "CODEX_ISOLATION_VIOLATION",
+        reason_code="MCP_SERVER_REGISTRY_NOT_EMPTY",
+        diagnostics={
+            "stage": "mcp_registry_validation",
+            "field": "data",
+            "state": "non_empty",
+            "source_count": len(data),
+            "server_name": first.get("name"),
+            "server_status": first.get("runtimeStatus"),
+            "config_source": "plugin" if first.get("pluginId") else "configured",
+        },
+    )
+
+
+def _first_string_key(value: dict[object, object]) -> str | None:
+    return next((key for key in sorted(value, key=str) if isinstance(key, str)), None)
+
+
+def _config_source(origins: object, key: str | None) -> str | None:
+    if not isinstance(origins, dict) or key is None:
+        return None
+    prefixes = (key, f"mcp_servers.{key}")
+    for path, metadata in origins.items():
+        if not isinstance(path, str) or not path.startswith(prefixes):
+            continue
+        if isinstance(metadata, dict) and isinstance(metadata.get("name"), dict):
+            source_type = metadata["name"].get("type")
+            if isinstance(source_type, str):
+                return source_type
+    return None
+
+
+def _path_is_within(candidate: Path, parent: Path) -> bool:
+    try:
+        candidate.resolve().relative_to(parent.resolve())
+    except (OSError, ValueError):
+        return False
+    return True
 
 
 def _validate_thread_response(
