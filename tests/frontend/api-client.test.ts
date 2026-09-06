@@ -276,6 +276,10 @@ describe('typed API client 2.0 semantics', () => {
 
     expect(report.task).toMatchObject({ outcome: 'succeeded', qualityStatus: 'not_evaluated', qualityVerdict: 'unknown', qualityScore: null });
     expect(report).toMatchObject({ verdict: 'undetermined', isSimulated: true });
+    expect(report.samples[0].run).toMatchObject({
+      adapterId: 'mock', requestedModel: 'mock-ragops-v1', actualModel: 'mock-ragops-v1',
+      usage: null, cost: null, providerRequestId: null,
+    });
     expect(report.verdictReason).toMatch(/不能据执行成功推断答案质量/);
     expect(diagnosis).toMatchObject({
       expectedAnswer: 'Policy A', historicalAnswer: 'Historical answer', generatedAnswer: '[mock] Context A',
@@ -389,6 +393,40 @@ describe('typed API client 2.0 semantics', () => {
     }));
     expect(body).not.toHaveProperty('model_version');
     expect(body).not.toHaveProperty('prompt_version');
+  });
+
+  it('maps an explicit provider verification without exposing credentials', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({
+      schema_version: '2.0',
+      provider_id: 'codex_chatgpt',
+      configuration_status: 'configured_unverified',
+      verification_status: 'succeeded',
+      authentication_status: 'authenticated',
+      generation_verified: false,
+      checked_at: '2026-09-06T00:00:00Z',
+      message: 'ChatGPT authentication is available.',
+      models: [{ id: 'account-model', display_name: 'Account model', is_default: true, reasoning_efforts: ['low'] }],
+      rate_limits: null,
+      codex_version: 'codex-cli/0.test',
+      protocol_compatible: true,
+      warning: 'Limits are unknown.',
+    })) as unknown as typeof fetch;
+    const client = createApiClient({ mode: 'api', baseUrl: '/api/v1', fetcher });
+
+    const result = await client.verifyModelProvider('codex_chatgpt', {
+      model: 'account-model', performGeneration: false,
+    });
+
+    expect(result).toMatchObject({
+      providerId: 'codex_chatgpt', authenticationStatus: 'authenticated',
+      verificationStatus: 'succeeded', generationVerified: false,
+      models: [{ id: 'account-model', isDefault: true }],
+    });
+    const [url, request] = vi.mocked(fetcher).mock.calls[0];
+    expect(String(url)).toContain('/model-execution/providers/codex_chatgpt:verify');
+    expect(JSON.parse((request as RequestInit).body as string)).toEqual({
+      model: 'account-model', perform_generation: false,
+    });
   });
 
   it('surfaces structured errors and empty responses without fixture fallback', async () => {

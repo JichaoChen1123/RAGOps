@@ -15,6 +15,12 @@ export function SampleStack({ samples, projectId, taskId }: { samples: SampleSum
       <div><dt>人工复核</dt><dd><StatusBadge value={sample.reviewStatus} /></dd></div>
       <div><dt>延迟</dt><dd>{sample.latencyMs === null ? '未知' : `${sample.latencyMs}ms`}</dd></div>
     </dl>
+    <dl className="record-details sample-run-trace">
+      <div><dt>实际通道</dt><dd>{sample.run.adapterId ?? '未知'} / {sample.run.providerId ?? '无或未知'}</dd></div>
+      <div><dt>请求 / 返回模型</dt><dd>{sample.run.requestedModel ?? '未知'} / {sample.run.actualModel ?? '未知'}</dd></div>
+      <div><dt>Usage / 成本</dt><dd>{sample.run.usage ? `${sample.run.usage.totalTokens} tokens` : 'usage 未知'} / {sample.run.cost === null ? '成本未知' : `$${sample.run.cost}`}</dd></div>
+      <div><dt>Request ID</dt><dd><code>{sample.run.providerRequestId ?? '未知'}</code></dd></div>
+    </dl>
     <div className="sample-answers"><div><span>参考答案</span><p>{sample.referenceAnswer ?? '未知'}</p></div><div><span>本次回答</span><p>{sample.generatedAnswer ?? '未知 / 未产生回答'}</p></div></div>
     <dl className="record-details sample-scores">
       <div><dt>Recall@5</dt><dd>{formatScore(sample.recallAt5, sample.recallAt5Status)}</dd></div>

@@ -77,6 +77,32 @@ class ExecutionConfig(BaseModel):
     generation: GenerationConfig
     context_policy: Literal["dataset_contexts", "none", "retrieval"] = "dataset_contexts"
 
+    @model_validator(mode="after")
+    def adapter_specific_generation_parameters(self) -> ExecutionConfig:
+        generation = self.generation
+        if self.adapter_id == "codex_chatgpt":
+            unsupported = []
+            if generation.temperature != 0.0:
+                unsupported.append("temperature")
+            if generation.top_p != 1.0:
+                unsupported.append("top_p")
+            if generation.max_output_tokens != 512:
+                unsupported.append("max_output_tokens")
+            if generation.stop:
+                unsupported.append("stop")
+            if generation.seed is not None:
+                unsupported.append("seed")
+            if unsupported:
+                joined = ", ".join(unsupported)
+                raise ValueError(
+                    f"codex_chatgpt does not support these generation parameters: {joined}"
+                )
+        elif generation.reasoning_effort is not None:
+            raise ValueError(
+                f"{self.adapter_id} does not support reasoning_effort in this integration"
+            )
+        return self
+
 
 class QualityRule(BaseModel):
     model_config = ConfigDict(extra="forbid", allow_inf_nan=False)
@@ -265,3 +291,31 @@ class ModelExecutionStatusResponse(BaseModel):
     execution_available: bool
     active_adapter: dict[str, Any]
     providers: list[dict[str, Any]]
+
+
+class ProviderVerificationRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    model: str | None = Field(default=None, min_length=1, max_length=200)
+    perform_generation: bool = False
+
+    @field_validator("model")
+    @classmethod
+    def model_not_blank(cls, value: str | None) -> str | None:
+        return value.strip() if value is not None else None
+
+
+class ProviderVerificationResponse(BaseModel):
+    schema_version: Literal["2.0"] = "2.0"
+    provider_id: Literal["codex_chatgpt", "openai_compatible"]
+    configuration_status: Literal["configured_unverified", "verified"]
+    verification_status: Literal["succeeded"] = "succeeded"
+    authentication_status: str
+    generation_verified: bool
+    checked_at: datetime
+    message: str
+    models: list[dict[str, Any]] = Field(default_factory=list)
+    rate_limits: dict[str, Any] | None = None
+    codex_version: str | None = None
+    protocol_compatible: bool | None = None
+    warning: str | None = None

@@ -31,6 +31,7 @@ class GenerationConfig(StrictModel):
     max_output_tokens: int = Field(default=512, ge=1, le=8192)
     stop: list[str] = Field(default_factory=list, max_length=8)
     seed: int | None = None
+    reasoning_effort: str | None = Field(default=None, min_length=1, max_length=40)
 
     @field_validator("model")
     @classmethod
@@ -45,6 +46,16 @@ class GenerationConfig(StrictModel):
     def valid_stop_sequences(cls, value: list[str]) -> list[str]:
         if any(not item.strip() or len(item) > 200 for item in value):
             raise ValueError("stop entries must be non-blank and at most 200 characters")
+        return value
+
+    @field_validator("reasoning_effort")
+    @classmethod
+    def valid_reasoning_effort(cls, value: str | None) -> str | None:
+        if value is None:
+            return None
+        value = value.strip()
+        if not value or not value.replace("-", "").replace("_", "").isalnum():
+            raise ValueError("reasoning_effort must be a simple non-blank identifier")
         return value
 
 
@@ -94,8 +105,15 @@ class ModelErrorCode(str, Enum):
     external_calls_disabled = "EXTERNAL_CALLS_DISABLED"
     capability_unsupported = "PROVIDER_CAPABILITY_UNSUPPORTED"
     authentication_failed = "PROVIDER_AUTHENTICATION_FAILED"
+    codex_not_installed = "CODEX_NOT_INSTALLED"
+    not_authenticated = "CODEX_CHATGPT_NOT_AUTHENTICATED"
+    wrong_auth_mode = "CODEX_CHATGPT_WRONG_AUTH_MODE"
+    protocol_incompatible = "CODEX_PROTOCOL_INCOMPATIBLE"
+    usage_limited = "CODEX_CHATGPT_USAGE_LIMITED"
     rate_limited = "PROVIDER_RATE_LIMITED"
     timeout = "PROVIDER_TIMEOUT"
+    cancelled = "PROVIDER_CANCELLED"
+    isolation_violation = "CODEX_ISOLATION_VIOLATION"
     transport_error = "PROVIDER_TRANSPORT_ERROR"
     server_error = "PROVIDER_SERVER_ERROR"
     response_invalid = "PROVIDER_RESPONSE_INVALID"
@@ -145,6 +163,11 @@ class AdapterCapabilities(StrictModel):
     external_network: bool
     supports_seed: bool
     supports_stop: bool
+    supports_temperature: bool = True
+    supports_top_p: bool = True
+    supports_max_output_tokens: bool = True
+    supports_reasoning_effort: bool = False
+    independent_session_per_sample: bool = False
     reports_usage: bool
     reports_request_id: bool
 
@@ -168,10 +191,10 @@ class ModelAdapterFactory(Protocol):
 
 
 class ModelTransportRequest(StrictModel):
-    method: Literal["POST"] = "POST"
+    method: Literal["GET", "POST"] = "POST"
     url: str
     headers: dict[str, str]
-    json_body: dict[str, object]
+    json_body: dict[str, object] | None = None
     timeout_ms: int = Field(ge=1)
 
 

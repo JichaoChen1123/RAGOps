@@ -30,7 +30,7 @@ RAGOps 是一个面向 RAG 系统的质量控制台。它把评测数据集、�
 | --- | --- | --- |
 | Mock UI 演示 | 已完成 | 浏览器里可体验概览、数据集、评测任务、报告、样本诊断和主要按钮反馈。 |
 | API MVP | 已完成 | FastAPI 提供数据集、样本导入、评测任务、复核状态和报告导出接口。 |
-| 模型执行基础 | 离线实现 | provider-neutral 契约、mock 与 OpenAI-compatible 适配器、超时/重试/脱敏和外部调用安全门已完成离线测试；真实连接未执行。 |
+| 模型执行基础 | 离线实现 | 统一契约、mock、Codex ChatGPT 本机桥接与 OpenAI-compatible 适配器已实现；真实账号/API 连接仍需用户主动验收。 |
 | 确定性评测 | 已完成 | 支持 Recall@K、MRR@K、NDCG@K、Context Precision/Recall、Citation Hit Rate 等指标。 |
 | 故障诊断 | 已完成 | 根据固定规则输出检索缺失、上下文污染、引用缺失等样本级归因。 |
 | 工程质量门禁 | 已完成 | GitHub Actions 运行后端、前端、文档、fixture 和 Docker Compose 构建检查。 |
@@ -51,6 +51,7 @@ RAGOps 是一个面向 RAG 系统的质量控制台。它把评测数据集、�
 - [快速启动](#快速启动)
 - [无 Docker 运行](#无-docker-运行)
 - [API 验收路径](#api-验收路径)
+- [模型双通道](#模型双通道)
 - [质量检查](#质量检查)
 - [Mock 和 API 边界](#mock-和-api-边界)
 - [简历写法](#简历写法)
@@ -252,6 +253,12 @@ npm --prefix frontend run dev
 10. `GET /api/v1/model-execution/status` 查看不含秘密且不探测提供方的执行状态。
 
 验收样本位于 [examples/eval-samples](examples/eval-samples/README.md)。完整 API 调用闭环可参考 `tests/backend/test_mvp_acceptance.py`。
+
+## 模型双通道
+
+评测任务可显式选择 `mock`、`codex_chatgpt` 或 `openai_compatible`。外部调用默认关闭，不会在启动或读取状态时产生模型请求；真实通道不会互相回退，也不会回退到 mock。
+
+Windows 主机登录、Docker 桥接、安全边界、配置项和从 1 条到 10 条样本的验收步骤见 [模型双通道接入与验收](docs/model-channels.md)。
 
 ## 质量检查
 

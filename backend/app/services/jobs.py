@@ -153,10 +153,19 @@ def create_job(
         "contract_version": "2.0",
         "adapter_id": execution.adapter_id,
         "provider_id": (
-            "openai_compatible" if execution.adapter_id == "openai_compatible" else None
+            execution.adapter_id if execution.adapter_id != "mock" else None
+        ),
+        "provider_name": (
+            resolved_settings.openai_compat_provider_name
+            if execution.adapter_id == "openai_compatible"
+            else "Codex ChatGPT account"
+            if execution.adapter_id == "codex_chatgpt"
+            else None
         ),
         "prompt": execution.prompt.model_dump(mode="json"),
         "generation": execution.generation.model_dump(mode="json"),
+        "requested_generation": execution.generation.model_dump(mode="json"),
+        "effective_generation": _effective_generation(execution),
         "context_policy": execution.context_policy,
         "dataset": {
             "id": dataset.id,
@@ -255,6 +264,20 @@ def _validate_adapter(adapter_id: str, settings: Settings) -> None:
         DefaultModelAdapterFactory(settings).create(adapter_id)
     except ModelError as exc:
         raise _model_domain_error(exc) from None
+
+
+def _effective_generation(execution) -> dict[str, Any]:  # type: ignore[no-untyped-def]
+    generation = execution.generation
+    if execution.adapter_id == "codex_chatgpt":
+        return {
+            "model": generation.model,
+            "reasoning_effort": generation.reasoning_effort,
+        }
+    return {
+        key: value
+        for key, value in generation.model_dump(mode="json").items()
+        if key != "reasoning_effort"
+    }
 
 
 def _model_domain_error(error: ModelError) -> DomainError:

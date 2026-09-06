@@ -164,7 +164,7 @@ def test_execution_status_is_local_and_secret_free() -> None:
     assert "VERY-SECRET-KEY" not in serialized
     assert "user-name" not in serialized
     assert "secret-path" not in serialized
-    assert "configured-model" not in serialized
+    assert body["providers"][0]["default_model"] == "configured-model"
 
 
 def test_explicit_quality_gate_is_the_only_source_of_verdict_and_score(client) -> None:

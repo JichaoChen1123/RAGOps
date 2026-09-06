@@ -4,10 +4,19 @@ import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
 import { AppRoutes } from '../../frontend/src/App';
 import { apiClient } from '../../frontend/src/api/client';
+import { MetricCard } from '../../frontend/src/components/MetricCard';
 
 function renderOverview() {
   return render(
     <MemoryRouter initialEntries={['/projects/demo/overview']}>
+      <AppRoutes />
+    </MemoryRouter>,
+  );
+}
+
+function renderEvaluations() {
+  return render(
+    <MemoryRouter initialEntries={['/projects/demo/evaluations']}>
       <AppRoutes />
     </MemoryRouter>,
   );
@@ -74,6 +83,42 @@ describe('workspace navigation and RAGOps capabilities', () => {
     expect(snapshot).toHaveTextContent('BACKEND EXECUTION ADAPTER');
     expect(snapshot).toHaveTextContent('mock');
     expect(snapshot).toHaveTextContent('openai_compatible · 未配置');
-    expect(snapshot).toHaveTextContent('本阶段不提供真实验证入口');
+    expect(snapshot).toHaveTextContent('真实验证必须在评测任务页由用户主动发起');
+  });
+
+  it('offers three independent model channels and keeps real checks explicit', async () => {
+    const user = userEvent.setup();
+    renderEvaluations();
+    await screen.findByRole('heading', { level: 2, name: '评测任务' });
+    await user.click(screen.getByRole('button', { name: '新建评测任务' }));
+    const dialog = screen.getByRole('dialog', { name: '新建评测任务' });
+    const channel = within(dialog).getByRole('combobox', { name: '选择后端执行器' });
+
+    expect(within(channel).getByRole('option', { name: /mock/ })).toBeInTheDocument();
+    expect(within(channel).getByRole('option', { name: /codex_chatgpt/ })).toBeInTheDocument();
+    expect(within(channel).getByRole('option', { name: /openai_compatible/ })).toBeInTheDocument();
+
+    await user.selectOptions(channel, 'codex_chatgpt');
+    expect(within(dialog).getByRole('button', { name: '检查登录' })).toBeDisabled();
+    expect(within(dialog).getByRole('button', { name: '真实小请求验证' })).toBeDisabled();
+    expect(dialog).toHaveTextContent('前端 Mock 数据模式不会连接真实模型通道');
+  });
+
+  it('labels partial metric coverage instead of presenting it as an all-sample result', () => {
+    render(<MetricCard metric={{ key: 'support', label: '引用支持率', value: 1, status: 'ok', evaluatedCount: 1, excludedCount: 2 }} />);
+    expect(screen.getByRole('article')).toHaveTextContent('已评 1 / 3 个样本（非整批）');
+  });
+
+  it('shows sample-level channel, model identity, usage and request ID in reports', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter initialEntries={['/projects/demo/evaluations/eval-20260826/report']}><AppRoutes /></MemoryRouter>);
+    await screen.findByRole('heading', { level: 2, name: /客服知识库 v3 回归评测/ });
+    expect(screen.getByText('0 / 3（部分样本）')).toBeInTheDocument();
+    await user.click(screen.getByRole('button', { name: '表格列表' }));
+    const table = screen.getByRole('table');
+    expect(table).toHaveTextContent('mock-ragops-v1 → mock-ragops-v1');
+    expect(table).toHaveTextContent('usage 未知 · 成本未知');
+    expect(table).toHaveTextContent('request ID：未知');
+    expect(table).toHaveTextContent('SIMULATED');
   });
 });
