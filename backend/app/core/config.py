@@ -16,7 +16,7 @@ class Settings(BaseSettings):
     database_url: str = "sqlite:///./ragops.db"
     log_level: str = "INFO"
     auto_create_schema: bool = True
-    model_execution_adapter: Literal["mock", "openai_compatible"] = "mock"
+    model_execution_adapter: Literal["mock", "codex_chatgpt", "openai_compatible"] = "mock"
     model_external_calls_enabled: bool = False
     model_request_timeout_ms: int = Field(default=10_000, ge=100, le=30_000)
     model_total_timeout_ms: int = Field(default=25_000, ge=100, le=60_000)
@@ -27,8 +27,17 @@ class Settings(BaseSettings):
     openai_compat_auth_mode: Literal["bearer", "none"] = "bearer"
     openai_compat_api_key: SecretStr | None = None
     openai_compat_default_model: str | None = None
+    codex_bridge_base_url: str | None = None
+    codex_bridge_token: SecretStr | None = None
+    codex_default_model: str | None = None
 
-    @field_validator("openai_compat_base_url", "openai_compat_default_model", mode="before")
+    @field_validator(
+        "openai_compat_base_url",
+        "openai_compat_default_model",
+        "codex_bridge_base_url",
+        "codex_default_model",
+        mode="before",
+    )
     @classmethod
     def blank_optional_strings_are_missing(cls, value: object) -> object:
         if isinstance(value, str):
@@ -36,16 +45,16 @@ class Settings(BaseSettings):
             return stripped or None
         return value
 
-    @field_validator("openai_compat_base_url")
+    @field_validator("openai_compat_base_url", "codex_bridge_base_url")
     @classmethod
     def valid_provider_url(cls, value: str | None) -> str | None:
         if value is None:
             return None
         parsed = urlsplit(value)
         if parsed.scheme not in {"http", "https"} or not parsed.netloc:
-            raise ValueError("OpenAI-compatible base URL must be an absolute HTTP(S) URL")
+            raise ValueError("Provider base URL must be an absolute HTTP(S) URL")
         if parsed.username or parsed.password or parsed.query or parsed.fragment:
-            raise ValueError("OpenAI-compatible base URL must not contain user info, query, or fragment")
+            raise ValueError("Provider base URL must not contain user info, query, or fragment")
         return value.rstrip("/")
 
     @model_validator(mode="after")
@@ -70,6 +79,20 @@ class Settings(BaseSettings):
             self.openai_compat_base_url
             and self.openai_compat_default_model
             and credential_ready
+        )
+
+    @property
+    def codex_bridge_credential_configured(self) -> bool:
+        return bool(
+            self.codex_bridge_token
+            and len(self.codex_bridge_token.get_secret_value().strip()) >= 32
+        )
+
+    @property
+    def codex_configuration_complete(self) -> bool:
+        return bool(
+            self.codex_bridge_base_url
+            and self.codex_bridge_credential_configured
         )
 
 

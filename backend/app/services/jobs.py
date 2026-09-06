@@ -14,7 +14,7 @@ from app.core.config import Settings, get_settings
 from app.core.errors import DomainError
 from app.core.ids import uuid7_str
 from app.evaluation.aggregation import aggregate_metric_results
-from app.execution.adapters import DefaultModelAdapterFactory
+from app.execution.adapters import DefaultModelAdapterFactory, effective_generation_config
 from app.execution.contracts import SnapshotExecutor
 from app.execution.executor import ModelEvaluationExecutor
 from app.execution.model import ModelError, ModelErrorCode
@@ -132,6 +132,13 @@ def create_job(
             status_code=status.HTTP_409_CONFLICT,
         )
     resolved_settings = settings or get_settings()
+    try:
+        effective_generation = effective_generation_config(
+            execution.adapter_id,
+            execution.generation,
+        )
+    except ModelError as exc:
+        raise _model_domain_error(exc) from None
     _validate_adapter(execution.adapter_id, resolved_settings)
     if execution.adapter_id == "mock" and execution.generation.model != "mock-ragops-v1":
         raise DomainError(
@@ -153,10 +160,12 @@ def create_job(
         "contract_version": "2.0",
         "adapter_id": execution.adapter_id,
         "provider_id": (
-            "openai_compatible" if execution.adapter_id == "openai_compatible" else None
+            execution.adapter_id if execution.adapter_id != "mock" else None
         ),
         "prompt": execution.prompt.model_dump(mode="json"),
         "generation": execution.generation.model_dump(mode="json"),
+        "requested_generation": execution.generation.model_dump(mode="json"),
+        "effective_generation": effective_generation,
         "context_policy": execution.context_policy,
         "dataset": {
             "id": dataset.id,
@@ -223,6 +232,8 @@ def create_job(
                     "adapter_id": execution.adapter_id,
                     "provider_id": snapshot["provider_id"],
                     "requested_model": execution.generation.model,
+                    "requested_generation": snapshot["requested_generation"],
+                    "effective_generation": snapshot["effective_generation"],
                     "actual_model": None,
                     "is_mock": True if execution.adapter_id == "mock" else None,
                     "finish_reason": None,
@@ -466,6 +477,12 @@ def _initial_run_snapshot(
         "adapter_id": executor.adapter_id,
         "provider_id": executor.provider_id,
         "requested_model": generation.get("model"),
+        "requested_generation": result.job.execution_snapshot.get(
+            "requested_generation", generation
+        ),
+        "effective_generation": result.job.execution_snapshot.get(
+            "effective_generation", generation
+        ),
         "actual_model": None,
         "is_mock": (result.run_snapshot or {}).get("is_mock"),
         "finish_reason": None,
@@ -559,6 +576,12 @@ def _fail_sample_without_runner(
             "adapter_id": snapshot.get("adapter_id"),
             "provider_id": snapshot.get("provider_id"),
             "requested_model": snapshot.get("generation", {}).get("model"),
+            "requested_generation": snapshot.get(
+                "requested_generation", snapshot.get("generation", {})
+            ),
+            "effective_generation": snapshot.get(
+                "effective_generation", snapshot.get("generation", {})
+            ),
             "actual_model": None,
             "is_mock": None,
             "finish_reason": None,
