@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import argparse
+import json
 import os
 import re
 import subprocess
@@ -11,6 +12,7 @@ import uvicorn
 from app.codex_bridge.app import BridgeConfig, create_bridge_app
 from app.core.config import get_settings
 from app.persistence.db import Database
+from app.services.rescore import rescore_job
 
 
 MINIMUM_CODEX_VERSION = (0, 153, 4)
@@ -84,10 +86,26 @@ def run_codex_bridge(args: argparse.Namespace) -> None:
     )
 
 
+def run_rescore(args: argparse.Namespace) -> None:
+    """Use persisted answers only; no adapter/executor is reachable from this command."""
+    settings = get_settings()
+    database = Database(settings.database_url)
+    try:
+        database.migrate()
+        with database.session() as session:
+            summary = rescore_job(session, args.job_id, dry_run=args.dry_run)
+        print(json.dumps(summary.__dict__, ensure_ascii=False, default=str))
+    finally:
+        database.dispose()
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(prog="ragops")
     subparsers = parser.add_subparsers(dest="command", required=True)
     subparsers.add_parser("init-db", help="migrate the database schema to head")
+    rescore = subparsers.add_parser("rescore", help="offline append-only answer scoring")
+    rescore.add_argument("--job-id", required=True)
+    rescore.add_argument("--dry-run", action="store_true", help="preflight without writes")
     bridge = subparsers.add_parser(
         "codex-bridge", help="run the authenticated host bridge for Codex ChatGPT access"
     )
@@ -102,6 +120,8 @@ def main() -> None:
 
     if args.command == "init-db":
         init_db()
+    elif args.command == "rescore":
+        run_rescore(args)
     elif args.command == "codex-bridge":
         run_codex_bridge(args)
 
