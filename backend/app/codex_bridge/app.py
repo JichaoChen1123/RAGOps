@@ -11,7 +11,7 @@ from fastapi.exceptions import RequestValidationError
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, ConfigDict, Field, SecretStr, field_validator
 
-from app.codex_bridge.protocol import CodexAppServerRunner, CodexBridgeError
+from app.codex_bridge.protocol import CodexAppServerRunner, CodexBridgeError, bridge_error
 
 
 class BridgeConfig(BaseModel):
@@ -117,6 +117,22 @@ def create_bridge_app(
             raise HTTPException(
                 status_code=exc.status_code,
                 detail=detail,
+            ) from None
+        except Exception as exc:
+            # Do not serialize exception messages: SDK/OS errors may contain secrets.
+            failure = bridge_error(
+                "CODEX_BRIDGE_INTERNAL_ERROR",
+                reason_code="BRIDGE_UNEXPECTED_EXCEPTION",
+                diagnostics={"stage": "bridge_operation", "value_type": type(exc).__name__},
+            )
+            raise HTTPException(
+                status_code=500,
+                detail={
+                    "code": failure.code,
+                    "message": failure.message,
+                    "reason_code": failure.reason_code,
+                    "diagnostic_id": failure.diagnostic_id,
+                },
             ) from None
         finally:
             lock.release()

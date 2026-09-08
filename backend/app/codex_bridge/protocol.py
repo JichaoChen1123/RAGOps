@@ -5,6 +5,7 @@ import logging
 import os
 import queue
 import re
+import shutil
 import subprocess
 import tempfile
 import threading
@@ -40,6 +41,7 @@ class CodexBridgeError(Exception):
 
 
 SAFE_ERRORS = {
+    "CODEX_BRIDGE_INTERNAL_ERROR": (500, "The local Codex bridge failed internally; inspect the diagnostic ID."),
     "CODEX_NOT_INSTALLED": (503, "Codex CLI is not installed or is not on PATH."),
     "CODEX_PROTOCOL_INCOMPATIBLE": (
         409,
@@ -96,6 +98,8 @@ _SENSITIVE_CHILD_ENVIRONMENT = {
 }
 
 _IGNORED_TURN_NOTIFICATIONS = {
+    # Informational account telemetry; generation errors are handled separately.
+    "account/rateLimits/updated",
     "config/warning",
     "deprecationNotice",
     "item/agentMessage/delta",
@@ -539,10 +543,30 @@ class CodexAppServerRunner:
 
     def generate(self, request: dict[str, Any]) -> dict[str, Any]:
         self.sandbox_root.mkdir(parents=True, exist_ok=True)
-        with tempfile.TemporaryDirectory(
-            prefix="ragops-codex-", dir=self.sandbox_root
-        ) as sandbox_dir:
-            return self._generate_in_sandbox(request, Path(sandbox_dir).resolve())
+        sandbox = Path(tempfile.mkdtemp(prefix="ragops-codex-", dir=self.sandbox_root)).resolve()
+        try:
+            return self._generate_in_sandbox(request, sandbox)
+        finally:
+            # Windows can briefly retain a child process's working directory.
+            # Cleanup must never replace the generation result or original error.
+            for attempt in range(3):
+                try:
+                    shutil.rmtree(sandbox)
+                    break
+                except FileNotFoundError:
+                    break
+                except OSError as exc:
+                    if attempt < 2:
+                        time.sleep(0.1 * (attempt + 1))
+                    else:
+                        logger.warning(
+                            "codex_bridge.sandbox_cleanup_deferred %s",
+                            json.dumps({
+                                "diagnostic_id": uuid.uuid4().hex,
+                                "error_type": type(exc).__name__,
+                                "winerror": getattr(exc, "winerror", None),
+                            }),
+                        )
 
     def _generate_in_sandbox(self, request: dict[str, Any], sandbox: Path) -> dict[str, Any]:
         started = time.monotonic()
@@ -614,7 +638,9 @@ class CodexAppServerRunner:
             if not isinstance(turn_id, str):
                 raise bridge_error("CODEX_RESPONSE_INVALID")
             try:
-                answer_text, usage, routed_model = self._wait_for_turn(rpc, thread_id, turn_id)
+                answer_text, usage, routed_model = self._wait_for_turn(
+                    rpc, thread_id, turn_id, sandbox=sandbox, expected_model=request["model"]
+                )
             except CodexBridgeError as exc:
                 if exc.code in {
                     "CODEX_TIMEOUT",
@@ -634,7 +660,8 @@ class CodexAppServerRunner:
             }
 
     def _wait_for_turn(
-        self, rpc: JsonRpcProcess, thread_id: str, turn_id: str
+        self, rpc: JsonRpcProcess, thread_id: str, turn_id: str,
+        *, sandbox: Path | None = None, expected_model: str | None = None,
     ) -> tuple[str, dict[str, int] | None, str | None]:
         deadline = time.monotonic() + self.timeout_seconds
         final_messages: dict[str, str] = {}
@@ -646,8 +673,40 @@ class CodexAppServerRunner:
             _raise_for_mcp_startup_notification(notification, stage="turn_stream")
             params = notification.get("params")
             if not isinstance(params, dict):
+                if method == "thread/settings/updated":
+                    raise bridge_error(
+                        "CODEX_PROTOCOL_INCOMPATIBLE",
+                        reason_code="THREAD_SETTINGS_PAYLOAD_INVALID",
+                        diagnostics={"stage": "turn_stream", "method": method},
+                    )
                 continue
-            if method in {"item/started", "item/completed"}:
+            if method == "thread/settings/updated":
+                if params.get("threadId") != thread_id:
+                    raise bridge_error(
+                        "CODEX_PROTOCOL_INCOMPATIBLE",
+                        reason_code="THREAD_SETTINGS_SCOPE_INVALID",
+                        diagnostics={"stage": "turn_stream", "method": method},
+                    )
+                settings = params.get("threadSettings")
+                policy = settings.get("sandboxPolicy") if isinstance(settings, dict) else None
+                safe = (
+                    isinstance(settings, dict)
+                    and sandbox is not None
+                    and expected_model is not None
+                    and settings.get("cwd") == str(sandbox)
+                    and settings.get("model") == expected_model
+                    and settings.get("approvalPolicy") == "never"
+                    and isinstance(policy, dict)
+                    and policy.get("type") == "readOnly"
+                    and policy.get("networkAccess", False) is False
+                )
+                if not safe:
+                    raise bridge_error(
+                        "CODEX_ISOLATION_VIOLATION",
+                        reason_code="THREAD_SETTINGS_UNSAFE_OR_INVALID",
+                        diagnostics={"stage": "turn_stream", "method": method},
+                    )
+            elif method in {"item/started", "item/completed"}:
                 if params.get("threadId") != thread_id or params.get("turnId") != turn_id:
                     continue
                 item = params.get("item")
@@ -1219,17 +1278,23 @@ def _safe_codex_version(value: object) -> str | None:
 
 
 def _rpc_error(value: object) -> CodexBridgeError:
+    if isinstance(value, dict) and value.get("code") in {-32600, -32601, -32602}:
+        return bridge_error(
+            "CODEX_PROTOCOL_INCOMPATIBLE",
+            reason_code="RPC_REQUEST_REJECTED",
+            diagnostics={"stage": "rpc_response", "rpc_id": value["code"]},
+        )
     if isinstance(value, dict):
         data = value.get("data")
         if isinstance(data, dict):
             return _map_codex_error(data.get("codexErrorInfo"))
-    return bridge_error("CODEX_CONNECTION_FAILED")
+    return bridge_error("CODEX_CONNECTION_FAILED", reason_code="RPC_ERROR_UNCLASSIFIED")
 
 
 def _turn_error(value: object) -> CodexBridgeError:
     if isinstance(value, dict):
         return _map_codex_error(value.get("codexErrorInfo"))
-    return bridge_error("CODEX_CONNECTION_FAILED")
+    return bridge_error("CODEX_CONNECTION_FAILED", reason_code="TURN_ERROR_UNCLASSIFIED")
 
 
 def _map_codex_error(value: object) -> CodexBridgeError:
@@ -1248,5 +1313,12 @@ def _map_codex_error(value: object) -> CodexBridgeError:
             "responseTooManyFailedAttempts",
         )
     ):
-        return bridge_error("CODEX_CONNECTION_FAILED")
-    return bridge_error("CODEX_CONNECTION_FAILED")
+        kind = next(key for key in (
+            "httpConnectionFailed", "responseStreamConnectionFailed",
+            "responseStreamDisconnected", "responseTooManyFailedAttempts",
+        ) if key in value)
+        return bridge_error(
+            "CODEX_CONNECTION_FAILED", reason_code="CODEX_UPSTREAM_CONNECTION_FAILED",
+            diagnostics={"stage": "codex_error", "state": kind},
+        )
+    return bridge_error("CODEX_CONNECTION_FAILED", reason_code="CODEX_ERROR_UNCLASSIFIED")

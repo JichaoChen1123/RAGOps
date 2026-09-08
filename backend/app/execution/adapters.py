@@ -665,6 +665,8 @@ def _bridge_error(
         "CODEX_ISOLATION_VIOLATION": ModelErrorCode.isolation_violation,
         "CODEX_PROTOCOL_INCOMPATIBLE": ModelErrorCode.protocol_incompatible,
         "CODEX_RESPONSE_INVALID": ModelErrorCode.response_invalid,
+        "CODEX_CONNECTION_FAILED": ModelErrorCode.transport_error,
+        "CODEX_BRIDGE_INTERNAL_ERROR": ModelErrorCode.server_error,
     }
     code = code_map.get(provider_code)
     if code is None:

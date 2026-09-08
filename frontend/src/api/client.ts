@@ -1048,10 +1048,10 @@ class HttpApiClient implements ApiClient {
 
   private async request<T>(
     path: string,
-    options: { method?: 'GET' | 'POST' | 'PATCH'; body?: unknown; headers?: Record<string, string> } = {},
+    options: { method?: 'GET' | 'POST' | 'PATCH'; body?: unknown; headers?: Record<string, string>; timeoutMs?: number } = {},
   ): Promise<T> {
     const controller = new AbortController();
-    const timeout = window.setTimeout(() => controller.abort(), 10_000);
+    const timeout = window.setTimeout(() => controller.abort(), options.timeoutMs ?? 10_000);
     const headers: Record<string, string> = { Accept: 'application/json', ...options.headers };
     if (options.body !== undefined) headers['Content-Type'] = 'application/json';
 
@@ -1114,6 +1114,9 @@ class HttpApiClient implements ApiClient {
     const payload = await this.request<Record<string, unknown>>(`/model-execution/providers/${providerId}:verify`, {
       method: 'POST',
       body: { model: input.model || null, perform_generation: input.performGeneration },
+      // Verification includes account inspection and optional real generation.
+      // Keep the ordinary resource-request deadline unchanged.
+      timeoutMs: 120_000,
     });
     return mapProviderVerification(payload);
   }
