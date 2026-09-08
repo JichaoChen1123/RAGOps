@@ -239,6 +239,8 @@ class EvaluationSampleResponse(BaseModel):
     historical_answer: str | None
     run: dict[str, Any] | None
     quality_status: QualityStatus
+    metric_state: Literal["metrics_calculated", "metrics_not_calculated"]
+    quality_gate_state: Literal["quality_gate_not_configured", "quality_gate_evaluated"]
     status: str
     answer: str | None
     retrieval_results: list[dict[str, Any]]

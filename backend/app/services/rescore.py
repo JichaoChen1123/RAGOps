@@ -2,13 +2,12 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Any
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session, joinedload
 
 from app.core.ids import uuid7_str
-from app.evaluation.answer_scoring import ALGORITHM_VERSION, answer_score_results
+from app.evaluation.answer_scoring import ALGORITHM_VERSION, answer_score_results, references_from_sample
 from app.persistence.models import AnswerRescore, EvaluationJobSample
 
 
@@ -22,14 +21,6 @@ class RescoreSummary:
     failures: list[dict[str, str]] = field(default_factory=list)
 
 
-def _references(row: EvaluationJobSample) -> list[str]:
-    metadata: dict[str, Any] = row.sample.metadata_json or {}
-    listed = metadata.get("reference_answers")
-    if isinstance(listed, list) and all(isinstance(item, str) for item in listed):
-        return list(listed)
-    return [] if row.sample.reference_answer is None else [row.sample.reference_answer]
-
-
 def rescore_job(session: Session, job_id: str, *, dry_run: bool = False) -> RescoreSummary:
     batch_id = uuid7_str()
     rows = list(session.scalars(select(EvaluationJobSample).options(joinedload(EvaluationJobSample.sample)).where(EvaluationJobSample.job_id == job_id)))
@@ -39,7 +30,7 @@ def rescore_job(session: Session, job_id: str, *, dry_run: bool = False) -> Resc
             summary.skipped += 1
             summary.failures.append({"job_sample_id": row.id, "reason": "stored model answer is unavailable"})
             continue
-        references = _references(row)
+        references = references_from_sample(row.sample)
         if not references:
             summary.skipped += 1
             summary.failures.append({"job_sample_id": row.id, "reason": "reference answer set is empty"})

@@ -6,6 +6,7 @@ from typing import Any
 from app.evaluation.diagnostics import diagnose
 from app.evaluation.features import build_features, item_relevance
 from app.evaluation.metrics import (
+    answer_reference_exact_match,
     citation_hit_rate,
     citation_resolution_rate,
     citation_support_rate,
@@ -17,7 +18,7 @@ from app.evaluation.metrics import (
     recall_at_k,
     unavailable_metric,
 )
-from app.evaluation.answer_scoring import answer_score_results
+from app.evaluation.answer_scoring import answer_score_results, references_from_sample
 from app.evaluation.profile import EvaluationProfile
 from app.persistence.models import DatasetSample
 
@@ -99,7 +100,9 @@ class DeterministicRAGEvaluator:
                 citation_resolution_rate(features.citations),
                 citation_support_rate(features.citations),
                 citation_hit_rate(features.citations),
-                *answer_score_results(features.answer, features.reference_answer),
+                # Preserve the established 2.x metric/API while adding versioned scores.
+                answer_reference_exact_match(features.answer, features.reference_answer),
+                *answer_score_results(features.answer, references_from_sample(sample)),
             ]
         )
         diagnoses = diagnose(features, self.profile)

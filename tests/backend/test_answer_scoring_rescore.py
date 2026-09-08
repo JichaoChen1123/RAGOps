@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from app.evaluation.answer_scoring import answer_score_results, normalized_em, strict_em
+from app.evaluation.answer_scoring import answer_score_results, answer_tokens, normalized_em, strict_em
 from app.persistence.models import AnswerRescore, Dataset, DatasetSample, EvaluationJob, EvaluationJobSample
 from app.persistence.db import Database
 from app.services.rescore import rescore_job
@@ -12,6 +12,8 @@ def test_answer_score_contract_protects_numeric_meaning_and_multireference() -> 
     assert strict_em("答案。", ["答案。"]).value == 1
     assert strict_em("答案。", ["答案"]).value == 0
     assert normalized_em(" A  answer。", ["a answer"]).value == 1
+    assert normalized_em("hello, world", ["hello world"]).value == 1
+    assert answer_tokens("GPT4") == ["gpt4"]
     assert normalized_em("1.5", ["15"]).value == 0
     assert normalized_em("-2", ["2"]).value == 0
     assert normalized_em("10%", ["10"]).value == 0
@@ -48,3 +50,9 @@ def test_rescore_is_append_only_and_offline() -> None:
         saved = session.scalar(select(AnswerRescore).where(AnswerRescore.job_sample_id == row.id))
         assert saved is not None and saved.job_id == job.id and saved.sample_id == sample.id
         assert {item["metric_name"] for item in saved.metric_results} == {"strict_em", "normalized_em", "chinese_answer_f1"}
+        dry_run = rescore_job(session, job.id, dry_run=True)
+        assert dry_run.succeeded == 1
+        assert len(session.scalars(select(AnswerRescore)).all()) == 1
+        second = rescore_job(session, job.id)
+        assert second.batch_id != summary.batch_id
+        assert len(session.scalars(select(AnswerRescore)).all()) == 2

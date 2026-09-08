@@ -298,8 +298,9 @@ class Database:
         connection.execute(  # type: ignore[attr-defined]
             text("CREATE TABLE IF NOT EXISTS answer_rescores ("
                  "id VARCHAR(36) PRIMARY KEY NOT NULL, batch_id VARCHAR(36) NOT NULL, "
-                 "job_id VARCHAR(36) NOT NULL, job_sample_id VARCHAR(36) NOT NULL, "
-                 "sample_id VARCHAR(36) NOT NULL, algorithm_version VARCHAR(80) NOT NULL, "
+                 "job_id VARCHAR(36) NOT NULL REFERENCES evaluation_jobs(id), "
+                 "job_sample_id VARCHAR(36) NOT NULL REFERENCES evaluation_job_samples(id), "
+                 "sample_id VARCHAR(36) NOT NULL REFERENCES dataset_samples(id), algorithm_version VARCHAR(80) NOT NULL, "
                  "source_answer TEXT, reference_answers JSON NOT NULL DEFAULT '[]', "
                  "metric_results JSON NOT NULL DEFAULT '[]', status VARCHAR(32) NOT NULL, "
                  "failure_reason TEXT, created_at DATETIME NOT NULL)")

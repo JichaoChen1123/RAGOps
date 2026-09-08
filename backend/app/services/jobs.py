@@ -782,6 +782,12 @@ def _sample_to_response(row: EvaluationJobSample) -> EvaluationSampleResponse:
         historical_answer=row.sample.historical_answer,
         run=run,
         quality_status=row.quality_status,
+        metric_state=("metrics_calculated" if row.metric_results else "metrics_not_calculated"),
+        quality_gate_state=(
+            "quality_gate_evaluated"
+            if row.quality_status in {"evaluated", "partial", "error"}
+            else "quality_gate_not_configured"
+        ),
         status=row.status,
         answer=row.answer,
         retrieval_results=row.retrieval_results,

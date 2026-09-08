@@ -200,6 +200,7 @@ def test_legacy_database_upgrade_is_idempotent_and_preserves_rows(tmp_path) -> N
                 "WHERE id = 'job-sample-legacy'"
             )
         ).scalar_one()
+        rescore_foreign_keys = inspect(connection).get_foreign_keys("answer_rescores")
     reopened.dispose()
 
     assert versions == ["0001_mvp_baseline", "0002_model_execution_contract", "0003_answer_score_rescore"]
@@ -212,6 +213,9 @@ def test_legacy_database_upgrade_is_idempotent_and_preserves_rows(tmp_path) -> N
     assert json.loads(report[2])["status"] == "legacy_unknown"
     assert json.loads(report[3])[0]["metric_name"] == "legacy_metric"
     assert review_status == "confirmed"
+    assert {foreign_key["referred_table"] for foreign_key in rescore_foreign_keys} == {
+        "evaluation_jobs", "evaluation_job_samples", "dataset_samples"
+    }
 
 
 def test_empty_database_migrates_to_head_and_second_run_is_empty(tmp_path) -> None:

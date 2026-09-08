@@ -9,14 +9,16 @@ from collections.abc import Sequence
 from app.evaluation.contracts import MetricResult
 
 ALGORITHM_VERSION = "answer-score-v1"
-_IGNORABLE_PUNCTUATION = re.compile(r"[\"'“”‘’()\[\]{}，、；：！!？?。.]" )
-_TOKEN = re.compile(r"[+-]?\d+(?:[,.]\d+)*(?:%|[A-Za-z]+)?|[A-Za-z]+|[\u3400-\u9fff]")
+_PROSE_PUNCTUATION = re.compile(r"[\"'“”‘’()\[\]{}，、；：！!？?。.]" )
+_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9]*|[+-]?\d+(?:[,.]\d+)*(?:%|[A-Za-z]+)?|[\u3400-\u9fff]")
 
 
 def normalize_answer(value: str) -> str:
     """Normalize prose but preserve signs, numeric separators, percent and units."""
     value = unicodedata.normalize("NFKC", value).casefold()
-    value = _IGNORABLE_PUNCTUATION.sub(" ", value)
+    # A comma/dot between digits is numeric syntax; all other punctuation is prose.
+    value = re.sub(r"(?<!\d)[,.]|[,.](?!\d)", " ", value)
+    value = _PROSE_PUNCTUATION.sub(" ", value)
     return " ".join(value.split())
 
 
@@ -28,6 +30,16 @@ def _references(references: str | Sequence[str] | None) -> list[str]:
     if references is None:
         return []
     return [references] if isinstance(references, str) else list(references)
+
+
+def references_from_sample(sample: object) -> list[str]:
+    """One authoritative compatibility path for normal evaluation and rescoring."""
+    metadata = getattr(sample, "metadata_json", {}) or {}
+    listed = metadata.get("reference_answers") if isinstance(metadata, dict) else None
+    if isinstance(listed, list) and all(isinstance(item, str) for item in listed):
+        return list(listed)
+    reference = getattr(sample, "reference_answer", None)
+    return [] if reference is None else [reference]
 
 
 def _aggregate(answer: str | None, references: str | Sequence[str] | None, name: str, score) -> MetricResult:
