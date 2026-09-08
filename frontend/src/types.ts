@@ -100,6 +100,8 @@ export interface EvaluationTask {
   status: TaskStatus;
   outcome: ExecutionOutcome;
   qualityStatus: QualityStatus;
+  metricState?: 'metrics_calculated' | 'metrics_not_calculated';
+  qualityGateState?: 'quality_gate_not_configured' | 'quality_gate_evaluated';
   qualityVerdict: QualityVerdict;
   qualityScore: number | null;
   progress: number;
