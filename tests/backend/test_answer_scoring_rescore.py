@@ -56,3 +56,25 @@ def test_rescore_is_append_only_and_offline() -> None:
         second = rescore_job(session, job.id)
         assert second.batch_id != summary.batch_id
         assert len(session.scalars(select(AnswerRescore)).all()) == 2
+
+
+def test_rescore_persists_skip_reason() -> None:
+    database = Database("sqlite://")
+    database.migrate()
+    with database.session() as session:
+        dataset = Dataset(name="skip-d", owner="test", status="published")
+        session.add(dataset)
+        session.flush()
+        sample = DatasetSample(dataset_id=dataset.id, ordinal=1, external_id="skip", question="q", reference_answer="a", content_sha256="c" * 64)
+        session.add(sample)
+        session.flush()
+        job = EvaluationJob(dataset_id=dataset.id, name="skip-j", config_version="c", model_version="m", prompt_version="p", total_count=1, request_fingerprint="d" * 64)
+        session.add(job)
+        session.flush()
+        row = EvaluationJobSample(job_id=job.id, sample_id=sample.id, status="failed", answer=None)
+        session.add(row); session.commit()
+        summary = rescore_job(session, job.id)
+        saved = session.scalar(select(AnswerRescore).where(AnswerRescore.job_sample_id == row.id))
+        assert summary.skipped == 1
+        assert saved is not None and saved.status == "skipped"
+        assert saved.failure_reason == "stored model answer is unavailable"

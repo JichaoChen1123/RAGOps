@@ -28,12 +28,22 @@ def rescore_job(session: Session, job_id: str, *, dry_run: bool = False) -> Resc
     for row in rows:
         if row.answer is None:
             summary.skipped += 1
-            summary.failures.append({"job_sample_id": row.id, "reason": "stored model answer is unavailable"})
+            reason = "stored model answer is unavailable"
+            summary.failures.append({"job_sample_id": row.id, "reason": reason})
+            if not dry_run:
+                session.add(AnswerRescore(batch_id=batch_id, job_id=row.job_id, job_sample_id=row.id,
+                    sample_id=row.sample_id, algorithm_version=ALGORITHM_VERSION, source_answer=None,
+                    reference_answers=[], metric_results=[], status="skipped", failure_reason=reason))
             continue
         references = references_from_sample(row.sample)
         if not references:
             summary.skipped += 1
-            summary.failures.append({"job_sample_id": row.id, "reason": "reference answer set is empty"})
+            reason = "reference answer set is empty"
+            summary.failures.append({"job_sample_id": row.id, "reason": reason})
+            if not dry_run:
+                session.add(AnswerRescore(batch_id=batch_id, job_id=row.job_id, job_sample_id=row.id,
+                    sample_id=row.sample_id, algorithm_version=ALGORITHM_VERSION, source_answer=row.answer,
+                    reference_answers=[], metric_results=[], status="skipped", failure_reason=reason))
             continue
         try:
             metrics = [metric.as_dict() for metric in answer_score_results(row.answer, references)]
