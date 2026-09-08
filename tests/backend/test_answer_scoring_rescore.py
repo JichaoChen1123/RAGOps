@@ -72,7 +72,8 @@ def test_rescore_persists_skip_reason() -> None:
         session.add(job)
         session.flush()
         row = EvaluationJobSample(job_id=job.id, sample_id=sample.id, status="failed", answer=None)
-        session.add(row); session.commit()
+        session.add(row)
+        session.commit()
         summary = rescore_job(session, job.id)
         saved = session.scalar(select(AnswerRescore).where(AnswerRescore.job_sample_id == row.id))
         assert summary.skipped == 1
