@@ -226,6 +226,8 @@ export interface SampleSummary {
   latencyMs: number | null;
   runStatus: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'legacy_unknown';
   qualityStatus: QualityStatus;
+  metricState?: 'metrics_calculated' | 'metrics_not_calculated';
+  qualityGateState?: 'quality_gate_not_configured' | 'quality_gate_evaluated';
   reviewStatus: SampleReviewStatus;
   contexts: ContextEvidence[];
   citations: CitationEvidence[];
