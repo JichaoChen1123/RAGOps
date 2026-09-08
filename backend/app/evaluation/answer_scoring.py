@@ -10,15 +10,20 @@ from app.evaluation.contracts import MetricResult
 
 ALGORITHM_VERSION = "answer-score-v1"
 _PROSE_PUNCTUATION = re.compile(r"[\"'“”‘’()\[\]{}，、；：！!？?。.]" )
-_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9]*|[+-]?\d+(?:[,.]\d+)*(?:%|[A-Za-z]+)?|[\u3400-\u9fff]")
+_TOKEN = re.compile(r"[A-Za-z][A-Za-z0-9]*|[+-]?\d+(?:[.,/]\d+)*(?:%|[A-Za-z]+)?|[\u3400-\u9fff]")
 
 
 def normalize_answer(value: str) -> str:
     """Normalize prose but preserve signs, numeric separators, percent and units."""
     value = unicodedata.normalize("NFKC", value).casefold()
-    # A comma/dot between digits is numeric syntax; all other punctuation is prose.
-    value = re.sub(r"(?<!\d)[,.]|[,.](?!\d)", " ", value)
+    # Protect numeric separators before prose punctuation is removed.
+    protected = {".": "\ue000", ",": "\ue001", "/": "\ue002"}
+    value = re.sub(
+        r"(?<=\d)[.,/](?=\d)", lambda match: protected[match.group(0)], value
+    )
+    value = re.sub(r"(?<!\d)[.,/]|[.,/](?!\d)", " ", value)
     value = _PROSE_PUNCTUATION.sub(" ", value)
+    value = value.translate(str.maketrans({v: k for k, v in protected.items()}))
     return " ".join(value.split())
 
 

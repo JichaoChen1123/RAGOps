@@ -25,6 +25,7 @@ from app.persistence.models import (
     EvaluationJob,
     EvaluationJobSample,
     EvaluationReport,
+    AnswerRescore,
     utc_now,
 )
 from app.schemas.jobs import (
@@ -32,6 +33,7 @@ from app.schemas.jobs import (
     EvaluationJobResponse,
     EvaluationReportResponse,
     EvaluationSampleResponse,
+    AnswerRescoreResponse,
     QualityGate,
     ReportExportResponse,
     SampleReviewUpdate,
@@ -812,6 +814,25 @@ def list_job_samples(session: Session, job_id: str) -> list[EvaluationSampleResp
         )
     )
     return [_sample_to_response(row) for row in rows]
+
+
+def list_answer_rescores(
+    session: Session, job_id: str, batch_id: str | None = None
+) -> list[AnswerRescoreResponse]:
+    get_job(session, job_id)
+    statement = select(AnswerRescore).where(AnswerRescore.job_id == job_id)
+    if batch_id is not None:
+        statement = statement.where(AnswerRescore.batch_id == batch_id)
+    rows = list(session.scalars(statement.order_by(AnswerRescore.created_at)))
+    return [
+        AnswerRescoreResponse(
+            id=row.id, batch_id=row.batch_id, job_id=row.job_id,
+            job_sample_id=row.job_sample_id, sample_id=row.sample_id,
+            algorithm_version=row.algorithm_version, metric_results=row.metric_results,
+            status=row.status, failure_reason=row.failure_reason, created_at=row.created_at,
+        )
+        for row in rows
+    ]
 
 
 def update_sample_review(

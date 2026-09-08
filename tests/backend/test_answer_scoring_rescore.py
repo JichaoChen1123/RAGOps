@@ -2,7 +2,7 @@ from __future__ import annotations
 
 from sqlalchemy import select
 
-from app.evaluation.answer_scoring import answer_score_results, answer_tokens, normalized_em, strict_em
+from app.evaluation.answer_scoring import answer_score_results, answer_tokens, normalize_answer, normalized_em, strict_em
 from app.persistence.models import AnswerRescore, Dataset, DatasetSample, EvaluationJob, EvaluationJobSample
 from app.persistence.db import Database
 from app.services.rescore import rescore_job
@@ -15,6 +15,12 @@ def test_answer_score_contract_protects_numeric_meaning_and_multireference() -> 
     assert normalized_em("hello, world", ["hello world"]).value == 1
     assert answer_tokens("GPT4") == ["gpt4"]
     assert normalized_em("1.5", ["15"]).value == 0
+    assert normalize_answer("1.5") == "1.5"
+    assert answer_tokens("1.5") == ["1.5"]
+    assert normalized_em("1.5", ["1 5"]).value == 0
+    assert answer_tokens("1/2") == ["1/2"]
+    assert normalized_em("1/2", ["1 2"]).value == 0
+    assert answer_score_results("1/2", ["1 2"])[2].value == 0
     assert normalized_em("-2", ["2"]).value == 0
     assert normalized_em("10%", ["10"]).value == 0
     assert normalized_em("10kg", ["10g"]).value == 0

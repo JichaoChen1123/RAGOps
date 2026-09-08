@@ -258,6 +258,24 @@ class EvaluationSampleListResponse(BaseModel):
     total: int
 
 
+class AnswerRescoreResponse(BaseModel):
+    id: str
+    batch_id: str
+    job_id: str
+    job_sample_id: str
+    sample_id: str
+    algorithm_version: str
+    metric_results: list[dict[str, Any]]
+    status: str
+    failure_reason: str | None
+    created_at: datetime
+
+
+class AnswerRescoreListResponse(BaseModel):
+    items: list[AnswerRescoreResponse]
+    total: int
+
+
 class EvaluationReportResponse(BaseModel):
     schema_version: Literal["1.0", "2.0"] = "2.0"
     id: str
