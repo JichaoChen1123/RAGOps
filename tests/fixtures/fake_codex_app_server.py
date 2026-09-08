@@ -11,6 +11,36 @@ from typing import Any
 
 SCENARIO = os.environ.get("FAKE_CODEX_SCENARIO", "happy")
 LOG_PATH = os.environ.get("FAKE_CODEX_LOG")
+DISABLED_FEATURES = (
+    "apps",
+    "auth_elicitation",
+    "browser_use",
+    "browser_use_external",
+    "browser_use_full_cdp_access",
+    "computer_use",
+    "enable_mcp_apps",
+    "hooks",
+    "image_generation",
+    "in_app_browser",
+    "in_app_chat",
+    "in_app_local_automation",
+    "memories",
+    "multi_agent",
+    "multi_agent_v2",
+    "plugin_sharing",
+    "plugins",
+    "recommended_plugins",
+    "remote_plugin",
+    "shell_tool",
+    "skill_mcp_dependency_install",
+    "skill_search",
+    "sleep_tool",
+    "tool_call_mcp_elicitation",
+    "tool_suggest",
+    "unified_exec",
+    "view_image",
+    "workspace_dependencies",
+)
 
 
 def emit(message: object) -> None:
@@ -164,7 +194,69 @@ def main() -> None:
         if method == "initialized" or method is None:
             continue
         if method == "initialize":
+            if SCENARIO == "mcp_startup":
+                emit(
+                    {
+                        "method": "mcpServer/startupStatus/updated",
+                        "params": {
+                            "name": "inherited_server",
+                            "status": "starting",
+                            "failureReason": None,
+                            "threadId": None,
+                            "error": "https://secret.invalid/?token=must-not-log",
+                        },
+                    }
+                )
             respond(request_id, {"userAgent": "codex-cli/0.153.4"})
+        elif method == "config/read":
+            codex_home = Path(os.environ["CODEX_HOME"])
+            config_path = codex_home / "config.toml"
+            inherited_mcp = config_path.exists() and "[mcp_servers." in config_path.read_text(
+                encoding="utf-8"
+            )
+            config: dict[str, Any] = {
+                "mcp_servers": {"inherited_server": {"enabled": True}}
+                if inherited_mcp
+                else {},
+                "plugins": {},
+                "features": {name: False for name in DISABLED_FEATURES},
+            }
+            if SCENARIO == "missing_effective_mcp":
+                config.pop("mcp_servers")
+            respond(
+                request_id,
+                {
+                    "config": config,
+                    "origins": {},
+                    "layers": [
+                        {
+                            "name": {"type": "user", "file": str(config_path)},
+                            "config": {},
+                            "version": "test",
+                        },
+                        {
+                            "name": {"type": "sessionFlags"},
+                            "config": {},
+                            "version": "test",
+                        },
+                    ],
+                },
+            )
+        elif method == "mcpServerStatus/list":
+            respond(
+                request_id,
+                {
+                    "data": [
+                        {
+                            "name": "registered_server",
+                            "runtimeStatus": "connected",
+                            "pluginId": None,
+                        }
+                    ]
+                    if SCENARIO == "mcp_registered"
+                    else []
+                },
+            )
         elif method == "account/read":
             if SCENARIO == "not_authenticated":
                 respond(request_id, {"account": None})
@@ -251,6 +343,18 @@ def main() -> None:
                     }
                 )
                 continue
+            if SCENARIO == "mcp_tool":
+                emit(
+                    {
+                        "method": "item/started",
+                        "params": {
+                            "threadId": "thread-offline",
+                            "turnId": "turn-offline",
+                            "item": {"id": "mcp-1", "type": "mcpToolCall"},
+                        },
+                    }
+                )
+                continue
             if SCENARIO == "server_request":
                 emit({"id": 900, "method": "tool/call", "params": {"command": "whoami"}})
                 continue
@@ -273,6 +377,13 @@ def main() -> None:
                     }
                 )
                 continue
+            if SCENARIO == "remote_control":
+                emit(
+                    {
+                        "method": "remoteControl/status/changed",
+                        "params": {"status": "disconnected"},
+                    }
+                )
             emit_turn()
         elif method == "turn/interrupt":
             respond(request_id, {})

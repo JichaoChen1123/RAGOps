@@ -19,6 +19,7 @@ class BridgeConfig(BaseModel):
 
     access_token: SecretStr
     sandbox_root: Path
+    codex_home: Path
     codex_executable: str = "codex"
     request_timeout_seconds: float = Field(default=180.0, ge=5.0, le=600.0)
 
@@ -71,6 +72,7 @@ def create_bridge_app(
         lambda: CodexAppServerRunner(
             executable=config.codex_executable,
             sandbox_root=config.sandbox_root,
+            codex_home=config.codex_home,
             timeout_seconds=config.request_timeout_seconds,
         )
     )

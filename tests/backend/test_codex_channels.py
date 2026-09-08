@@ -283,7 +283,11 @@ def test_bridge_requires_auth_and_rejects_arbitrary_execution_fields(
     tmp_path: Path,
 ) -> None:
     runner = RunnerSpy()
-    config = BridgeConfig(access_token="b" * 32, sandbox_root=tmp_path)
+    config = BridgeConfig(
+        access_token="b" * 32,
+        sandbox_root=tmp_path / "sandbox",
+        codex_home=tmp_path / "codex-home",
+    )
     with TestClient(create_bridge_app(config, runner_factory=lambda: runner)) as client:
         assert client.get("/health/live").status_code == 200
         assert client.get("/v1/status").status_code == 401
@@ -340,23 +344,36 @@ class FakeRpc:
         self,
         serial: int,
         cwd: Path,
+        codex_home: Path,
         *,
         tool_event: bool = False,
+        mcp_tool_event: bool = False,
+        mcp_startup_event: bool = False,
+        remote_control_event: bool = False,
+        mcp_registry_event: bool = False,
         unknown_event: bool = False,
+        unknown_method: str = "future/safeStatus",
         config_warning: bool = False,
+        effective_config_variant: str = "normal",
         thread_variant: str = "normal",
     ) -> None:
         self.serial = serial
         self.cwd = cwd
+        self.codex_home = codex_home
         self.thread_id = f"thread-{serial}"
         self.turn_id = f"turn-{serial}"
         self.tool_event = tool_event
+        self.mcp_registry_event = mcp_registry_event
+        self.effective_config_variant = effective_config_variant
         self.thread_variant = thread_variant
         self.requests: list[tuple[str, dict[str, Any] | None]] = []
         self.interrupted = False
         item = (
-            {"type": "commandExecution", "command": "forbidden"}
-            if tool_event
+            {
+                "type": "mcpToolCall" if mcp_tool_event else "commandExecution",
+                "command": "forbidden",
+            }
+            if tool_event or mcp_tool_event
             else {
                 "id": f"message-{serial}",
                 "type": "agentMessage",
@@ -404,8 +421,30 @@ class FakeRpc:
             self.notifications.insert(
                 0,
                 {
-                    "method": "future/safeStatus",
+                    "method": unknown_method,
                     "params": {"threadId": self.thread_id, "turnId": self.turn_id},
+                },
+            )
+        if mcp_startup_event:
+            self.notifications.insert(
+                0,
+                {
+                    "method": "mcpServer/startupStatus/updated",
+                    "params": {
+                        "name": "node_repl",
+                        "status": "failed",
+                        "failureReason": "reauthenticationRequired",
+                        "threadId": self.thread_id,
+                        "error": "https://secret.invalid/?token=must-not-be-logged",
+                    },
+                },
+            )
+        if remote_control_event:
+            self.notifications.insert(
+                0,
+                {
+                    "method": "remoteControl/status/changed",
+                    "params": {"status": "disconnected"},
                 },
             )
         if config_warning:
@@ -441,6 +480,54 @@ class FakeRpc:
                     "planType": "plus",
                     "email": "must-not-leak@example.test",
                 }
+            }
+        if method == "config/read":
+            response = {
+                "config": {
+                    "mcp_servers": {},
+                    "plugins": {},
+                    "features": {name: False for name in DISABLED_FEATURES},
+                },
+                "origins": {},
+                "layers": [
+                    {
+                        "name": {
+                            "type": "user",
+                            "file": str(self.codex_home / "config.toml"),
+                        },
+                        "config": {},
+                        "version": "test",
+                    },
+                    {
+                        "name": {"type": "sessionFlags"},
+                        "config": {},
+                        "version": "test",
+                    },
+                ],
+            }
+            if self.effective_config_variant == "missing_mcp_servers":
+                response["config"].pop("mcp_servers")
+            elif self.effective_config_variant == "inherited_mcp_server":
+                response["config"]["mcp_servers"] = {"node_repl": {"enabled": True}}
+                response["origins"] = {
+                    "mcp_servers.node_repl": {"name": {"type": "user"}, "version": "test"}
+                }
+            elif self.effective_config_variant == "wrong_user_home":
+                response["layers"][0]["name"]["file"] = str(
+                    self.codex_home.parent / "daily-home" / "config.toml"
+                )
+            return response
+        if method == "mcpServerStatus/list":
+            return {
+                "data": [
+                    {
+                        "name": "loaded_server",
+                        "runtimeStatus": "connected",
+                        "pluginId": "plugin-source",
+                    }
+                ]
+                if self.mcp_registry_event
+                else []
             }
         if method == "model/list":
             return {
@@ -497,13 +584,25 @@ class FakeConnectionFactory:
         self,
         *,
         tool_event: bool = False,
+        mcp_tool_event: bool = False,
+        mcp_startup_event: bool = False,
+        remote_control_event: bool = False,
+        mcp_registry_event: bool = False,
         unknown_event: bool = False,
+        unknown_method: str = "future/safeStatus",
         config_warning: bool = False,
+        effective_config_variant: str = "normal",
         thread_variant: str = "normal",
     ) -> None:
         self.tool_event = tool_event
+        self.mcp_tool_event = mcp_tool_event
+        self.mcp_startup_event = mcp_startup_event
+        self.remote_control_event = remote_control_event
+        self.mcp_registry_event = mcp_registry_event
         self.unknown_event = unknown_event
+        self.unknown_method = unknown_method
         self.config_warning = config_warning
+        self.effective_config_variant = effective_config_variant
         self.thread_variant = thread_variant
         self.instances: list[FakeRpc] = []
 
@@ -511,9 +610,16 @@ class FakeConnectionFactory:
         rpc = FakeRpc(
             len(self.instances) + 1,
             Path(str(kwargs["cwd"])),
+            Path(str(kwargs["codex_home"])),
             tool_event=self.tool_event,
+            mcp_tool_event=self.mcp_tool_event,
+            mcp_startup_event=self.mcp_startup_event,
+            remote_control_event=self.remote_control_event,
+            mcp_registry_event=self.mcp_registry_event,
             unknown_event=self.unknown_event,
+            unknown_method=self.unknown_method,
             config_warning=self.config_warning,
+            effective_config_variant=self.effective_config_variant,
             thread_variant=self.thread_variant,
         )
         self.instances.append(rpc)
@@ -524,6 +630,7 @@ def _runner(tmp_path: Path, factory: FakeConnectionFactory) -> CodexAppServerRun
     return CodexAppServerRunner(
         executable="codex",
         sandbox_root=tmp_path / "empty-codex-root",
+        codex_home=tmp_path / "bridge-codex-home",
         timeout_seconds=1,
         connection_factory=factory,
     )
@@ -605,6 +712,86 @@ def test_protocol_accepts_schema_confirmed_config_warning(tmp_path: Path) -> Non
     assert factory.instances[0].interrupted is False
 
 
+def test_protocol_accepts_exact_remote_control_status_notification(tmp_path: Path) -> None:
+    factory = FakeConnectionFactory(remote_control_event=True)
+
+    result = _runner(tmp_path, factory).generate(_bridge_payload())
+
+    assert result["answer"] == "isolated answer"
+    assert factory.instances[0].interrupted is False
+
+
+def test_protocol_reports_mcp_startup_status_without_logging_error_detail(
+    tmp_path: Path, caplog: pytest.LogCaptureFixture
+) -> None:
+    factory = FakeConnectionFactory(mcp_startup_event=True)
+
+    with pytest.raises(CodexBridgeError) as caught:
+        _runner(tmp_path, factory).generate(_bridge_payload())
+
+    assert caught.value.code == "CODEX_ISOLATION_VIOLATION"
+    assert caught.value.reason_code == "MCP_SERVER_STARTUP_STATUS_OBSERVED"
+    assert caught.value.diagnostics == {
+        "stage": "turn_stream",
+        "method": "mcpServer/startupStatus/updated",
+        "server_name": "node_repl",
+        "server_status": "failed",
+        "failure_reason": "reauthenticationRequired",
+        "thread_id": "thread-1",
+    }
+    assert factory.instances[0].interrupted is True
+    assert caught.value.diagnostic_id in caplog.text
+    assert "secret.invalid" not in caplog.text
+    assert "must-not-be-logged" not in caplog.text
+
+
+def test_protocol_distinguishes_mcp_tool_call_from_other_forbidden_items(
+    tmp_path: Path,
+) -> None:
+    factory = FakeConnectionFactory(mcp_tool_event=True)
+
+    with pytest.raises(CodexBridgeError) as caught:
+        _runner(tmp_path, factory).generate(_bridge_payload())
+
+    assert caught.value.code == "CODEX_ISOLATION_VIOLATION"
+    assert caught.value.reason_code == "MCP_TOOL_CALL_FORBIDDEN"
+    assert factory.instances[0].interrupted is True
+
+
+@pytest.mark.parametrize(
+    ("variant", "reason_code", "field"),
+    [
+        ("missing_mcp_servers", "MCP_EFFECTIVE_CONFIG_UNVERIFIABLE", "mcp_servers"),
+        ("inherited_mcp_server", "MCP_EFFECTIVE_CONFIG_NOT_EMPTY", "mcp_servers"),
+        ("wrong_user_home", "MCP_CONFIG_SOURCE_MISMATCH", "layers.user.file"),
+    ],
+)
+def test_effective_mcp_configuration_fails_closed(
+    tmp_path: Path, variant: str, reason_code: str, field: str
+) -> None:
+    factory = FakeConnectionFactory(effective_config_variant=variant)
+
+    with pytest.raises(CodexBridgeError) as caught:
+        _runner(tmp_path, factory).inspect()
+
+    assert caught.value.code == "CODEX_ISOLATION_VIOLATION"
+    assert caught.value.reason_code == reason_code
+    assert caught.value.diagnostics["field"] == field
+
+
+def test_loaded_mcp_registry_is_not_treated_as_a_tool_call(tmp_path: Path) -> None:
+    factory = FakeConnectionFactory(mcp_registry_event=True)
+
+    with pytest.raises(CodexBridgeError) as caught:
+        _runner(tmp_path, factory).inspect()
+
+    assert caught.value.code == "CODEX_ISOLATION_VIOLATION"
+    assert caught.value.reason_code == "MCP_SERVER_REGISTRY_NOT_EMPTY"
+    assert caught.value.diagnostics["server_name"] == "loaded_server"
+    assert caught.value.diagnostics["server_status"] == "connected"
+    assert caught.value.diagnostics["config_source"] == "plugin"
+
+
 def test_protocol_stops_unknown_notification_with_protocol_reason(
     tmp_path: Path,
 ) -> None:
@@ -617,6 +804,21 @@ def test_protocol_stops_unknown_notification_with_protocol_reason(
     assert caught.value.reason_code == "TURN_PROTOCOL_NOTIFICATION_UNRECOGNIZED"
     assert caught.value.diagnostics["method"] == "future/safeStatus"
     assert caught.value.diagnostics["stage"] == "turn_stream"
+    assert factory.instances[0].interrupted is True
+
+
+def test_protocol_does_not_whitelist_unknown_mcp_notifications(tmp_path: Path) -> None:
+    factory = FakeConnectionFactory(
+        unknown_event=True,
+        unknown_method="mcpServer/futureStatus/updated",
+    )
+
+    with pytest.raises(CodexBridgeError) as caught:
+        _runner(tmp_path, factory).generate(_bridge_payload())
+
+    assert caught.value.code == "CODEX_PROTOCOL_INCOMPATIBLE"
+    assert caught.value.reason_code == "TURN_PROTOCOL_NOTIFICATION_UNRECOGNIZED"
+    assert caught.value.diagnostics["method"] == "mcpServer/futureStatus/updated"
     assert factory.instances[0].interrupted is True
 
 
@@ -684,11 +886,14 @@ def test_codex_process_disables_features_and_removes_model_credentials(
 
     monkeypatch.setenv("RAGOPS_CODEX_BRIDGE_TOKEN", "must-not-reach-codex")
     monkeypatch.setenv("OPENAI_API_KEY", "must-not-reach-codex")
+    monkeypatch.setenv("CODEX_HOME", str(tmp_path / "inherited-codex-home"))
     monkeypatch.setenv("SAFE_BRIDGE_TEST_VALUE", "retained")
+    dedicated_home = tmp_path / "bridge-codex-home"
 
     with JsonRpcProcess(
         executable="codex",
         cwd=tmp_path,
+        codex_home=dedicated_home,
         process_factory=process_factory,
     ):
         pass
@@ -706,6 +911,7 @@ def test_codex_process_disables_features_and_removes_model_credentials(
         ]
     assert "RAGOPS_CODEX_BRIDGE_TOKEN" not in environment
     assert "OPENAI_API_KEY" not in environment
+    assert environment["CODEX_HOME"] == str(dedicated_home.resolve())
     assert environment["SAFE_BRIDGE_TEST_VALUE"] == "retained"
 
 
@@ -737,6 +943,7 @@ def _subprocess_runner(
         CodexAppServerRunner(
             executable="codex",
             sandbox_root=tmp_path / "sandbox-root",
+            codex_home=tmp_path / "bridge-codex-home",
             timeout_seconds=timeout_seconds,
             connection_factory=connection_factory,
         ),
@@ -778,10 +985,61 @@ def test_real_subprocess_protocol_status_and_generation_are_offline_and_isolated
     assert methods.count("turn/start") == 1
 
 
+def test_subprocess_ignores_inherited_codex_home_with_mcp_configuration(
+    tmp_path: Path, monkeypatch
+) -> None:
+    inherited_home = tmp_path / "daily-codex-home"
+    inherited_home.mkdir()
+    (inherited_home / "config.toml").write_text(
+        '[mcp_servers.inherited_server]\ncommand = "must-not-start"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setenv("CODEX_HOME", str(inherited_home))
+    runner, log_path = _subprocess_runner(tmp_path, monkeypatch)
+
+    status = runner.inspect()
+
+    assert status["authentication_status"] == "authenticated"
+    assert runner.codex_home == (tmp_path / "bridge-codex-home").resolve()
+    assert "config/read" in _logged_methods(log_path)
+    assert "mcpServerStatus/list" in _logged_methods(log_path)
+
+
+def test_real_subprocess_reports_mcp_startup_as_loaded_not_tool_use(
+    tmp_path: Path, monkeypatch, caplog: pytest.LogCaptureFixture
+) -> None:
+    runner, _ = _subprocess_runner(tmp_path, monkeypatch, "mcp_startup")
+
+    with pytest.raises(CodexBridgeError) as caught:
+        runner.inspect()
+
+    assert caught.value.code == "CODEX_ISOLATION_VIOLATION"
+    assert caught.value.reason_code == "MCP_SERVER_STARTUP_STATUS_OBSERVED"
+    assert caught.value.diagnostics["stage"] == "rpc_response"
+    assert caught.value.diagnostics["method"] == "mcpServer/startupStatus/updated"
+    assert caught.value.diagnostics["server_name"] == "inherited_server"
+    assert caught.value.diagnostics["server_status"] == "starting"
+    assert caught.value.diagnostics["failure_reason"] is None
+    assert caught.value.diagnostics["thread_id"] is None
+    assert "secret.invalid" not in caplog.text
+    assert "must-not-log" not in caplog.text
+
+
+def test_real_subprocess_preserves_exact_remote_control_notification(
+    tmp_path: Path, monkeypatch
+) -> None:
+    runner, _ = _subprocess_runner(tmp_path, monkeypatch, "remote_control")
+
+    result = runner.generate(_bridge_payload())
+
+    assert result["answer"] == "offline grounded answer"
+
+
 @pytest.mark.parametrize(
     ("scenario", "expected_code", "interrupted"),
     [
         ("tool", "CODEX_ISOLATION_VIOLATION", True),
+        ("mcp_tool", "CODEX_ISOLATION_VIOLATION", True),
         ("server_request", "CODEX_ISOLATION_VIOLATION", True),
         ("server_request_during_response", "CODEX_ISOLATION_VIOLATION", False),
         ("instructions", "CODEX_ISOLATION_VIOLATION", False),
@@ -807,6 +1065,7 @@ def test_real_subprocess_protocol_fails_closed(
     assert caught.value.code == expected_code
     expected_reason = {
         "tool": "TURN_FORBIDDEN_ITEM_TYPE",
+        "mcp_tool": "MCP_TOOL_CALL_FORBIDDEN",
         "server_request": "RPC_SERVER_REQUEST_DURING_TURN",
         "server_request_during_response": "RPC_SERVER_REQUEST_DURING_RESPONSE",
         "instructions": "THREAD_INSTRUCTION_SOURCES_PRESENT",
