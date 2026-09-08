@@ -495,3 +495,30 @@ describe('typed API client 2.0 semantics', () => {
     expect(result).toMatchObject({ id: 'result-1', reviewStatus: 'confirmed', qualityStatus: 'not_evaluated' });
   });
 });
+
+it('waits beyond ten seconds for verification and preserves backend diagnostics', async () => {
+  vi.useFakeTimers();
+  try {
+    let requestSignal: AbortSignal | null | undefined;
+    const fetcher = vi.fn((_url: RequestInfo | URL, init?: RequestInit) => {
+      requestSignal = init?.signal;
+      return new Promise<Response>((resolve) => {
+        setTimeout(() => resolve(jsonResponse({ error: {
+          code: 'CODEX_PROTOCOL_INCOMPATIBLE', message: 'Protocol error',
+          details: { diagnostic_id: 'diagnostic-test' },
+        } }, 502)), 15_000);
+      });
+    });
+    const client = createApiClient({ mode: 'api', baseUrl: '/api/v1', fetcher });
+    const result = client.verifyModelProvider('codex_chatgpt', {
+      performGeneration: true,
+    }).catch((error: unknown) => error);
+    await vi.advanceTimersByTimeAsync(10_001);
+    expect(requestSignal?.aborted).toBe(false);
+    await vi.advanceTimersByTimeAsync(5_000);
+    expect(await result).toMatchObject({ code: 'CODEX_PROTOCOL_INCOMPATIBLE' });
+    expect(vi.getTimerCount()).toBe(0);
+  } finally {
+    vi.useRealTimers();
+  }
+});
