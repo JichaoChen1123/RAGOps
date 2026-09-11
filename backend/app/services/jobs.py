@@ -786,9 +786,11 @@ def _sample_to_response(row: EvaluationJobSample) -> EvaluationSampleResponse:
         quality_status=row.quality_status,
         metric_state=("metrics_calculated" if row.metric_results else "metrics_not_calculated"),
         quality_gate_state=(
-            "quality_gate_evaluated"
+            "quality_gate_not_configured"
+            if (row.job.execution_snapshot or {}).get("quality_gate") is None
+            else "quality_gate_evaluated"
             if row.quality_status in {"evaluated", "partial", "error"}
-            else "quality_gate_not_configured"
+            else "quality_gate_configured_pending"
         ),
         status=row.status,
         answer=row.answer,
