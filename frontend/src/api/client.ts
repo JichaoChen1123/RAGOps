@@ -516,6 +516,8 @@ function mapSample(raw: RawEvaluationSample): SampleSummary {
     latencyMs: recordNumber(parts.run, 'latency_ms') ?? (typeof raw.latency_ms === 'number' ? raw.latency_ms : null),
     runStatus: parts.runStatus,
     qualityStatus: qualityStatus(raw.quality_status),
+    metricState: raw.metric_state,
+    qualityGateState: raw.quality_gate_state,
     reviewStatus: raw.review_status,
     contexts: parts.contexts,
     citations: parts.citations,
