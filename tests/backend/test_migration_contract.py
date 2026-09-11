@@ -201,6 +201,7 @@ def test_legacy_database_upgrade_is_idempotent_and_preserves_rows(tmp_path) -> N
             )
         ).scalar_one()
         rescore_foreign_keys = inspect(connection).get_foreign_keys("answer_rescores")
+        rescore_indexes = inspect(connection).get_indexes("answer_rescores")
     reopened.dispose()
 
     assert versions == ["0001_mvp_baseline", "0002_model_execution_contract", "0003_answer_score_rescore"]
@@ -215,6 +216,9 @@ def test_legacy_database_upgrade_is_idempotent_and_preserves_rows(tmp_path) -> N
     assert review_status == "confirmed"
     assert {foreign_key["referred_table"] for foreign_key in rescore_foreign_keys} == {
         "evaluation_jobs", "evaluation_job_samples", "dataset_samples"
+    }
+    assert {(tuple(index["column_names"]), index["unique"]) for index in rescore_indexes} == {
+        (("batch_id",), 0), (("job_id",), 0), (("job_sample_id",), 0), (("sample_id",), 0)
     }
 
 

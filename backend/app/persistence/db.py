@@ -306,6 +306,9 @@ class Database:
                  "failure_reason TEXT, created_at DATETIME NOT NULL)")
         )
         connection.execute(text("CREATE INDEX IF NOT EXISTS ix_answer_rescores_batch_id ON answer_rescores (batch_id)"))  # type: ignore[attr-defined]
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_answer_rescores_job_id ON answer_rescores (job_id)"))  # type: ignore[attr-defined]
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_answer_rescores_job_sample_id ON answer_rescores (job_sample_id)"))  # type: ignore[attr-defined]
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_answer_rescores_sample_id ON answer_rescores (sample_id)"))  # type: ignore[attr-defined]
 
     @staticmethod
     def _validate_answer_rescore_table(connection: object) -> None:
