@@ -90,6 +90,10 @@ def run_codex_bridge(args: argparse.Namespace) -> None:
 def run_rescore(args: argparse.Namespace) -> None:
     """Use persisted answers only; no adapter/executor is reachable from this command."""
     settings = get_settings()
+    if args.dry_run and settings.database_url.startswith("sqlite:///"):
+        database_path = Path(settings.database_url.removeprefix("sqlite:///"))
+        if not database_path.exists():
+            raise SystemExit("dry-run requires an already migrated database; run ragops init-db first")
     database = Database(settings.database_url)
     try:
         if args.dry_run:
