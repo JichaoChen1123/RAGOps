@@ -12,4 +12,8 @@ Inputs accept one reference string for compatibility or a list. Each metric inde
 
 Migration `0003_answer_score_rescore` adds append-only `answer_rescores`. Every row links the original job, job sample and dataset sample, copies the stored generated answer and reference list, and carries the algorithm version and metric results. It never overwrites `evaluation_job_samples.metric_results`, answers, or references. The `ragops rescore` command only reads those records and writes these score rows; it imports neither adapter nor executor code.
 
-Quality state is explicit: `metrics_calculated` means metrics exist and no gate was configured; `quality_gate_evaluated` has a pass/fail verdict; `quality_gate_not_configured` has no synthetic verdict. Existing API `quality_status=not_evaluated` means not a gate result, not missing metrics.
+Quality state is explicit: `metrics_calculated` means stored metrics exist. `quality_gate_not_configured`, `quality_gate_configured_pending`, and `quality_gate_evaluated` respectively distinguish no configured gate, configured-but-not-yet-evaluated, and evaluated gate; no pass/fail is invented for the first two.
+
+## Local offline operation
+
+Run `ragops init-db` once to migrate a database. Use `ragops rescore --job-id <job> --dry-run` for a read-only preflight; it refuses an unmigrated database and instructs you to run `init-db`, without changing it. Run `ragops rescore --job-id <job>` to append a new batch. Use `GET /api/v1/evaluation-jobs/<job>/answer-rescores` (optionally `?batch_id=<batch>`) or `ragops rescore-list --job-id <job> [--batch-id <batch>]` for JSON-only reads/export. `skipped` and `failed` rows contain `failure_reason`; original answers and prior scores are never overwritten, and these commands do not invoke model adapters or external models.
