@@ -129,6 +129,8 @@ interface RawEvaluationSample {
   metric_results?: Array<Record<string, unknown>>;
   diagnoses?: Array<Record<string, unknown>>;
   quality_status?: string;
+  metric_state?: 'metrics_calculated' | 'metrics_not_calculated';
+  quality_gate_state?: 'quality_gate_not_configured' | 'quality_gate_configured_pending' | 'quality_gate_evaluated';
   review_status: SampleReviewStatus;
   reviewed_at: string | null;
   latency_ms?: number | null;

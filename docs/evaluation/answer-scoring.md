@@ -16,4 +16,22 @@ Quality state is explicit: `metrics_calculated` means stored metrics exist. `qua
 
 ## Local offline operation
 
-Run `ragops init-db` once to migrate a database. Use `ragops rescore --job-id <job> --dry-run` for a read-only preflight; it refuses an unmigrated database and instructs you to run `init-db`, without changing it. Run `ragops rescore --job-id <job>` to append a new batch. Use `GET /api/v1/evaluation-jobs/<job>/answer-rescores` (optionally `?batch_id=<batch>`) or `ragops rescore-list --job-id <job> [--batch-id <batch>]` for JSON-only reads/export. `skipped` and `failed` rows contain `failure_reason`; original answers and prior scores are never overwritten, and these commands do not invoke model adapters or external models.
+All commands below use the configured `RAGOPS_DATABASE_URL` and can be run from the repository root:
+
+```powershell
+# Migrate (the only command here that changes the schema)
+uv run --project backend ragops init-db
+
+# Read-only preflight. A missing or unmigrated SQLite database exits with
+# "run ragops init-db first" and is not created or changed.
+uv run --project backend ragops rescore --job-id <job-id> --dry-run
+
+# Append a new score batch; existing answers and score rows remain unchanged.
+uv run --project backend ragops rescore --job-id <job-id>
+
+# JSON-only stored-result queries, optionally isolated to one batch.
+uv run --project backend ragops rescore-list --job-id <job-id>
+uv run --project backend ragops rescore-list --job-id <job-id> --batch-id <batch-id>
+```
+
+For API consumers, `GET /api/v1/evaluation-jobs/<job-id>/answer-rescores` accepts an optional `?batch_id=<batch-id>` and returns only that job's records; an unrelated batch ID returns an empty list rather than leaking another job. `skipped` and `failed` rows include `failure_reason`. Rescoring is append-only and uses persisted answers/references only: it never overwrites prior scores and does not invoke model adapters, executors, or external models.
