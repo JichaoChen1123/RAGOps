@@ -57,6 +57,25 @@ describe('RAGOps MVP routes', () => {
     expect(screen.getAllByText('未评估').length).toBeGreaterThan(0);
   });
 
+  it('renders a configured but pending quality gate without calling it unconfigured', async () => {
+    const user = userEvent.setup();
+    const fixture = await apiClient.getEvaluationReport('demo', 'eval-20260826');
+    vi.spyOn(apiClient, 'getEvaluationReport').mockResolvedValue({
+      ...fixture,
+      samples: fixture.samples.map((sample) => ({
+        ...sample,
+        metricState: 'metrics_calculated',
+        qualityGateState: 'quality_gate_configured_pending',
+      })),
+    });
+
+    renderRoute('/projects/demo/evaluations/eval-20260826/report');
+
+    await user.click(await screen.findByRole('button', { name: '表格列表' }));
+    expect(document.body.textContent).toContain('质量门已配置，尚未评估');
+    expect(document.body.textContent).not.toContain('质量门未配置');
+  });
+
   it('renders distinct secondary diagnoses with the same label without duplicate-key warnings', async () => {
     const fixture = await apiClient.getSampleDiagnosis('demo', 'eval-20260826', 'sample-042');
     const repeatedLabel = '重复诊断标签';

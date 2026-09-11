@@ -63,6 +63,8 @@ const rawJobV2 = {
   provider_id: null,
   execution_snapshot: executionSnapshot,
   quality_status: 'not_evaluated',
+  metric_state: 'metrics_calculated',
+  quality_gate_state: 'quality_gate_configured_pending',
   quality_verdict: 'unknown',
   quality_score: null,
 };
@@ -110,6 +112,8 @@ const rawSampleV2 = {
     finished_at: '2026-09-05T00:02:01Z',
   },
   quality_status: 'not_evaluated',
+  metric_state: 'metrics_calculated',
+  quality_gate_state: 'quality_gate_configured_pending',
   metric_results: [
     { metric_name: 'recall_at_5', metric_version: '2.0.0', status: 'not_evaluated', value: null },
     { metric_name: 'citation_resolution_rate', metric_version: '2.0.0', status: 'ok', value: 1 },
@@ -279,6 +283,9 @@ describe('typed API client 2.0 semantics', () => {
     expect(report.samples[0].run).toMatchObject({
       adapterId: 'mock', requestedModel: 'mock-ragops-v1', actualModel: 'mock-ragops-v1',
       usage: null, cost: null, providerRequestId: null,
+    });
+    expect(report.samples[0]).toMatchObject({
+      metricState: 'metrics_calculated', qualityGateState: 'quality_gate_configured_pending',
     });
     expect(report.verdictReason).toMatch(/不能据执行成功推断答案质量/);
     expect(diagnosis).toMatchObject({

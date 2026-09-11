@@ -1,6 +1,6 @@
 from typing import Annotated
 
-from fastapi import APIRouter, BackgroundTasks, Depends, Header, status
+from fastapi import APIRouter, BackgroundTasks, Depends, Header, Query, status
 from sqlalchemy.orm import Session
 
 from app.api.dependencies import get_database, get_runtime_settings, get_session
@@ -13,6 +13,7 @@ from app.schemas.jobs import (
     EvaluationReportResponse,
     EvaluationSampleResponse,
     EvaluationSampleListResponse,
+    AnswerRescoreListResponse,
     ReportExportResponse,
     SampleReviewUpdate,
 )
@@ -76,6 +77,15 @@ def get_evaluation_job(job_id: str, session: SessionDep) -> EvaluationJobRespons
 def list_evaluation_samples(job_id: str, session: SessionDep) -> EvaluationSampleListResponse:
     items = service.list_job_samples(session, job_id)
     return EvaluationSampleListResponse(items=items, total=len(items))
+
+
+@router.get("/{job_id}/answer-rescores", response_model=AnswerRescoreListResponse)
+def list_answer_rescores(
+    job_id: str, session: SessionDep, batch_id: str | None = Query(default=None)
+) -> AnswerRescoreListResponse:
+    """Read stored append-only scoring rows only; this endpoint never rescoring/migrates."""
+    items = service.list_answer_rescores(session, job_id, batch_id)
+    return AnswerRescoreListResponse(items=items, total=len(items))
 
 
 @router.patch(

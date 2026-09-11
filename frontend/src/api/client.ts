@@ -102,6 +102,8 @@ interface RawEvaluationJob {
   provider_id?: string | null;
   execution_snapshot?: Record<string, unknown> | null;
   quality_status?: string;
+  metric_state?: 'metrics_calculated' | 'metrics_not_calculated';
+  quality_gate_state?: 'quality_gate_not_configured' | 'quality_gate_configured_pending' | 'quality_gate_evaluated';
   quality_verdict?: string;
   quality_score?: number | null;
 }
@@ -127,6 +129,8 @@ interface RawEvaluationSample {
   metric_results?: Array<Record<string, unknown>>;
   diagnoses?: Array<Record<string, unknown>>;
   quality_status?: string;
+  metric_state?: 'metrics_calculated' | 'metrics_not_calculated';
+  quality_gate_state?: 'quality_gate_not_configured' | 'quality_gate_configured_pending' | 'quality_gate_evaluated';
   review_status: SampleReviewStatus;
   reviewed_at: string | null;
   latency_ms?: number | null;
@@ -336,6 +340,8 @@ function mapTask(raw: RawEvaluationJob, datasetName = raw.dataset_id): Evaluatio
     status: raw.status,
     outcome: raw.outcome,
     qualityStatus: qualityStatus(raw.quality_status),
+    metricState: raw.metric_state,
+    qualityGateState: raw.quality_gate_state,
     qualityVerdict: qualityVerdict(raw.quality_verdict),
     qualityScore: typeof raw.quality_score === 'number' && Number.isFinite(raw.quality_score) ? raw.quality_score : null,
     progress: Math.round(raw.progress * 100),
@@ -512,6 +518,8 @@ function mapSample(raw: RawEvaluationSample): SampleSummary {
     latencyMs: recordNumber(parts.run, 'latency_ms') ?? (typeof raw.latency_ms === 'number' ? raw.latency_ms : null),
     runStatus: parts.runStatus,
     qualityStatus: qualityStatus(raw.quality_status),
+    metricState: raw.metric_state,
+    qualityGateState: raw.quality_gate_state,
     reviewStatus: raw.review_status,
     contexts: parts.contexts,
     citations: parts.citations,

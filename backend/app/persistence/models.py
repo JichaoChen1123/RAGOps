@@ -150,6 +150,29 @@ class EvaluationJobSample(Base):
 
     job: Mapped[EvaluationJob] = relationship(back_populates="sample_results")
     sample: Mapped[DatasetSample] = relationship(back_populates="job_results")
+    rescores: Mapped[list[AnswerRescore]] = relationship(
+        back_populates="job_sample", cascade="all, delete-orphan", order_by="AnswerRescore.created_at"
+    )
+
+
+class AnswerRescore(Base):
+    """Append-only answer score calculation; never replaces the original metric JSON."""
+    __tablename__ = "answer_rescores"
+
+    id: Mapped[str] = mapped_column(String(36), primary_key=True, default=uuid7_str)
+    batch_id: Mapped[str] = mapped_column(String(36), nullable=False, index=True)
+    job_id: Mapped[str] = mapped_column(ForeignKey("evaluation_jobs.id"), nullable=False, index=True)
+    job_sample_id: Mapped[str] = mapped_column(ForeignKey("evaluation_job_samples.id"), nullable=False, index=True)
+    sample_id: Mapped[str] = mapped_column(ForeignKey("dataset_samples.id"), nullable=False, index=True)
+    algorithm_version: Mapped[str] = mapped_column(String(80), nullable=False)
+    source_answer: Mapped[str | None] = mapped_column(Text)
+    reference_answers: Mapped[list[str]] = mapped_column(JSON, nullable=False, default=list)
+    metric_results: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
+    status: Mapped[str] = mapped_column(String(32), nullable=False, default="calculated")
+    failure_reason: Mapped[str | None] = mapped_column(Text)
+    created_at: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False, default=utc_now)
+
+    job_sample: Mapped[EvaluationJobSample] = relationship(back_populates="rescores")
 
 
 class EvaluationReport(Base):

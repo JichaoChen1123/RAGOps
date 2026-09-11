@@ -239,6 +239,8 @@ class EvaluationSampleResponse(BaseModel):
     historical_answer: str | None
     run: dict[str, Any] | None
     quality_status: QualityStatus
+    metric_state: Literal["metrics_calculated", "metrics_not_calculated"]
+    quality_gate_state: Literal["quality_gate_not_configured", "quality_gate_configured_pending", "quality_gate_evaluated"]
     status: str
     answer: str | None
     retrieval_results: list[dict[str, Any]]
@@ -253,6 +255,24 @@ class EvaluationSampleResponse(BaseModel):
 
 class EvaluationSampleListResponse(BaseModel):
     items: list[EvaluationSampleResponse]
+    total: int
+
+
+class AnswerRescoreResponse(BaseModel):
+    id: str
+    batch_id: str
+    job_id: str
+    job_sample_id: str
+    sample_id: str
+    algorithm_version: str
+    metric_results: list[dict[str, Any]]
+    status: str
+    failure_reason: str | None
+    created_at: datetime
+
+
+class AnswerRescoreListResponse(BaseModel):
+    items: list[AnswerRescoreResponse]
     total: int
 
 

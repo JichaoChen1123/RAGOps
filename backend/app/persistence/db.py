@@ -53,6 +53,7 @@ class Database:
             "evaluation_jobs",
             "evaluation_job_samples",
             "evaluation_reports",
+            "answer_rescores",
         }
         with self.engine.begin() as connection:
             existing_tables = set(inspect(connection).get_table_names())
@@ -62,9 +63,12 @@ class Database:
                 self._ensure_migration_table(connection)
                 self._record_migration(connection, "0001_mvp_baseline")
                 self._record_migration(connection, "0002_model_execution_contract")
-                return ["0001_mvp_baseline", "0002_model_execution_contract"]
+                self._record_migration(connection, "0003_answer_score_rescore")
+                return ["0001_mvp_baseline", "0002_model_execution_contract", "0003_answer_score_rescore"]
 
-            if present_application_tables != application_tables:
+            # answer_rescores was introduced after the MVP baseline and is added by 0003.
+            baseline_tables = application_tables - {"answer_rescores"}
+            if present_application_tables not in (baseline_tables, application_tables):
                 missing = sorted(application_tables - present_application_tables)
                 raise RuntimeError(
                     "Database does not match the RAGOps MVP baseline; missing tables: "
@@ -87,6 +91,12 @@ class Database:
                 applied.append("0002_model_execution_contract")
             else:
                 self._validate_contract_columns(connection)
+            if "0003_answer_score_rescore" not in versions:
+                self._apply_answer_score_rescore(connection)
+                self._record_migration(connection, "0003_answer_score_rescore")
+                applied.append("0003_answer_score_rescore")
+            else:
+                self._validate_answer_rescore_table(connection)
         return applied
 
     @staticmethod
@@ -282,6 +292,31 @@ class Database:
                     f"Migration 0002 is recorded but {table_name} is missing: "
                     + ", ".join(sorted(missing))
                 )
+
+    @staticmethod
+    def _apply_answer_score_rescore(connection: object) -> None:
+        connection.execute(  # type: ignore[attr-defined]
+            text("CREATE TABLE IF NOT EXISTS answer_rescores ("
+                 "id VARCHAR(36) PRIMARY KEY NOT NULL, batch_id VARCHAR(36) NOT NULL, "
+                 "job_id VARCHAR(36) NOT NULL REFERENCES evaluation_jobs(id), "
+                 "job_sample_id VARCHAR(36) NOT NULL REFERENCES evaluation_job_samples(id), "
+                 "sample_id VARCHAR(36) NOT NULL REFERENCES dataset_samples(id), algorithm_version VARCHAR(80) NOT NULL, "
+                 "source_answer TEXT, reference_answers JSON NOT NULL DEFAULT '[]', "
+                 "metric_results JSON NOT NULL DEFAULT '[]', status VARCHAR(32) NOT NULL, "
+                 "failure_reason TEXT, created_at DATETIME NOT NULL)")
+        )
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_answer_rescores_batch_id ON answer_rescores (batch_id)"))  # type: ignore[attr-defined]
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_answer_rescores_job_id ON answer_rescores (job_id)"))  # type: ignore[attr-defined]
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_answer_rescores_job_sample_id ON answer_rescores (job_sample_id)"))  # type: ignore[attr-defined]
+        connection.execute(text("CREATE INDEX IF NOT EXISTS ix_answer_rescores_sample_id ON answer_rescores (sample_id)"))  # type: ignore[attr-defined]
+
+    @staticmethod
+    def _validate_answer_rescore_table(connection: object) -> None:
+        actual = {column["name"] for column in inspect(connection).get_columns("answer_rescores")}
+        required = {"id", "batch_id", "job_id", "job_sample_id", "sample_id", "algorithm_version", "source_answer", "reference_answers", "metric_results", "status", "failure_reason", "created_at"}
+        missing = required - actual
+        if missing:
+            raise RuntimeError("Migration 0003 is recorded but answer_rescores is missing: " + ", ".join(sorted(missing)))
 
     def dispose(self) -> None:
         self.engine.dispose()

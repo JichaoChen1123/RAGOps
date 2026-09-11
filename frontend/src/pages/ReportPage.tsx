@@ -189,7 +189,7 @@ export function ReportPage() {
               <tr key={sample.id}>
                 <td className="question-cell"><strong>{sample.question}</strong><small>{sample.sampleId} · 参考：{sample.referenceAnswer ?? '未知'}</small></td>
                 <td><StatusBadge value={sample.runStatus} />{sample.run.isMock === true && <small>SIMULATED</small>}<small><code>{sample.run.adapterId ?? '通道未知'}</code></small><small>{sample.run.requestedModel ?? '请求模型未知'} → {sample.run.actualModel ?? '返回模型未知'}</small><small>{sample.run.usage ? `${sample.run.usage.totalTokens} tokens` : 'usage 未知'} · {sample.run.cost === null ? '成本未知' : `$${sample.run.cost}`}</small><small>request ID：<code>{sample.run.providerRequestId ?? '未知'}</code></small></td>
-                <td><StatusBadge value={sample.qualityStatus} /></td>
+                <td><StatusBadge value={sample.qualityStatus} /><small>{sample.metricState === 'metrics_calculated' ? '指标已计算' : '指标未计算'} · {sample.qualityGateState === 'quality_gate_evaluated' ? '质量门已评估' : sample.qualityGateState === 'quality_gate_configured_pending' ? '质量门已配置，尚未评估' : '质量门未配置'}</small></td>
                 <td>{formatScore(sample.recallAt5, sample.recallAt5Status)}</td>
                 <td>{formatScore(sample.faithfulness, sample.faithfulnessStatus)}</td>
                 <td>{formatScore(sample.citationSupportRate, sample.citationSupportStatus)}</td>
