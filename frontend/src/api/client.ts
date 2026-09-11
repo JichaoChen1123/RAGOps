@@ -103,7 +103,7 @@ interface RawEvaluationJob {
   execution_snapshot?: Record<string, unknown> | null;
   quality_status?: string;
   metric_state?: 'metrics_calculated' | 'metrics_not_calculated';
-  quality_gate_state?: 'quality_gate_not_configured' | 'quality_gate_evaluated';
+  quality_gate_state?: 'quality_gate_not_configured' | 'quality_gate_configured_pending' | 'quality_gate_evaluated';
   quality_verdict?: string;
   quality_score?: number | null;
 }

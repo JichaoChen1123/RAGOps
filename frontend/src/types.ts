@@ -101,7 +101,7 @@ export interface EvaluationTask {
   outcome: ExecutionOutcome;
   qualityStatus: QualityStatus;
   metricState?: 'metrics_calculated' | 'metrics_not_calculated';
-  qualityGateState?: 'quality_gate_not_configured' | 'quality_gate_evaluated';
+  qualityGateState?: 'quality_gate_not_configured' | 'quality_gate_configured_pending' | 'quality_gate_evaluated';
   qualityVerdict: QualityVerdict;
   qualityScore: number | null;
   progress: number;
@@ -227,7 +227,7 @@ export interface SampleSummary {
   runStatus: 'queued' | 'running' | 'succeeded' | 'failed' | 'cancelled' | 'legacy_unknown';
   qualityStatus: QualityStatus;
   metricState?: 'metrics_calculated' | 'metrics_not_calculated';
-  qualityGateState?: 'quality_gate_not_configured' | 'quality_gate_evaluated';
+  qualityGateState?: 'quality_gate_not_configured' | 'quality_gate_configured_pending' | 'quality_gate_evaluated';
   reviewStatus: SampleReviewStatus;
   contexts: ContextEvidence[];
   citations: CitationEvidence[];

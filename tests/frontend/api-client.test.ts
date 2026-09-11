@@ -63,6 +63,8 @@ const rawJobV2 = {
   provider_id: null,
   execution_snapshot: executionSnapshot,
   quality_status: 'not_evaluated',
+  metric_state: 'metrics_calculated',
+  quality_gate_state: 'quality_gate_configured_pending',
   quality_verdict: 'unknown',
   quality_score: null,
 };
@@ -492,7 +494,7 @@ describe('typed API client 2.0 semantics', () => {
       '/api/v1/evaluation-jobs/job-1/samples/result-1/review',
       expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ review_status: 'confirmed' }) }),
     );
-    expect(result).toMatchObject({ id: 'result-1', reviewStatus: 'confirmed', qualityStatus: 'not_evaluated' });
+    expect(result).toMatchObject({ id: 'result-1', reviewStatus: 'confirmed', qualityStatus: 'not_evaluated', qualityGateState: 'quality_gate_configured_pending' });
   });
 });
 
