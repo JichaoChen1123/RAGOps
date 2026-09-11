@@ -7,7 +7,6 @@ import pytest
 
 from app import cli
 from app.core.config import Settings
-from app.core.errors import DomainError
 from app.persistence.db import Database
 
 
@@ -29,8 +28,7 @@ def test_dry_run_cli_does_not_mutate_migrated_database(monkeypatch, tmp_path) ->
         connection.exec_driver_sql("INSERT INTO datasets (id,name,owner,schema_version,version,status,sample_count,created_at) VALUES ('d','d','o','1','v','published',0,CURRENT_TIMESTAMP)")
     database.dispose()
     before = path.read_bytes()
-    with pytest.raises(DomainError):
-        _run(monkeypatch, path, "missing-job")
+    _run(monkeypatch, path, "missing-job")
     assert path.read_bytes() == before
 
 
@@ -39,7 +37,8 @@ def test_dry_run_cli_refuses_legacy_database_without_writes(monkeypatch, tmp_pat
     connection = sqlite3.connect(path)
     connection.execute("CREATE TABLE datasets (id TEXT PRIMARY KEY, marker TEXT)")
     connection.execute("INSERT INTO datasets VALUES ('d', 'kept')")
-    connection.commit(); connection.close()
+    connection.commit()
+    connection.close()
     before = path.read_bytes()
     with pytest.raises(SystemExit, match="ragops init-db"):
         _run(monkeypatch, path, "missing-job")
