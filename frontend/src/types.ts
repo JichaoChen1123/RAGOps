@@ -430,6 +430,7 @@ export interface ApiClient {
     input: { model?: string; performGeneration: boolean },
   ): Promise<ProviderVerificationResult>;
   listDatasets(projectId: string): Promise<Dataset[]>;
+  getDataset(projectId: string, datasetId: string): Promise<Dataset>;
   listDatasetSamples(projectId: string, datasetId: string): Promise<DatasetSampleInput[]>;
   createDataset(projectId: string, input: DatasetCreateInput): Promise<Dataset>;
   importDatasetSamples(projectId: string, datasetId: string, samples: DatasetSampleInput[]): Promise<DatasetImportResult>;

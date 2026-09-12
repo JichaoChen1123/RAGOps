@@ -819,6 +819,7 @@ function mapProviderVerification(raw: Record<string, unknown>): ProviderVerifica
 
 class MockApiClient implements ApiClient {
   private readonly datasetsState = clone(datasets);
+  private readonly datasetSamplesState = new Map<string, DatasetSampleInput[]>();
   private readonly tasksState = clone(evaluationTasks);
   private readonly reportState = clone(report);
   private readonly diagnosisState = clone(diagnosis);
@@ -911,7 +912,15 @@ class MockApiClient implements ApiClient {
     return this.respond(this.datasetsState);
   }
 
-  listDatasetSamples(_projectId: string, _datasetId: string): Promise<DatasetSampleInput[]> { return this.respond([]); }
+  async getDataset(_projectId: string, datasetId: string): Promise<Dataset> {
+    const dataset = this.datasetsState.find((candidate) => candidate.id === datasetId);
+    if (!dataset) throw new ApiError('Dataset not found', 404, 'DATASET_NOT_FOUND');
+    return this.respond(dataset);
+  }
+
+  listDatasetSamples(_projectId: string, datasetId: string): Promise<DatasetSampleInput[]> {
+    return this.respond(this.datasetSamplesState.get(datasetId) ?? []);
+  }
 
   async createDataset(_projectId: string, input: DatasetCreateInput): Promise<Dataset> {
     const created: Dataset = {
@@ -928,6 +937,7 @@ class MockApiClient implements ApiClient {
       owner: input.owner,
     };
     this.datasetsState.unshift(created);
+    this.datasetSamplesState.set(created.id, clone(input.samples ?? []));
     return this.respond(created);
   }
 
@@ -937,6 +947,7 @@ class MockApiClient implements ApiClient {
     if (dataset.status !== 'draft') throw new ApiError('已发布数据集不可继续导入样本', 409, 'DATASET_IMMUTABLE');
     dataset.sampleCount += samples.length;
     dataset.updatedAt = now();
+    this.datasetSamplesState.set(datasetId, [...(this.datasetSamplesState.get(datasetId) ?? []), ...clone(samples)]);
     return this.respond({ accepted: samples.length, rejected: 0, dataset });
   }
 
@@ -1141,6 +1152,10 @@ class HttpApiClient implements ApiClient {
   async listDatasets(_projectId: string): Promise<Dataset[]> {
     const payload = await this.request<RawDatasetList>('/datasets');
     return payload.items.map(mapDataset);
+  }
+
+  async getDataset(_projectId: string, datasetId: string): Promise<Dataset> {
+    return mapDataset(await this.request<RawDataset>(`/datasets/${datasetId}`));
   }
 
   async listDatasetSamples(_projectId: string, datasetId: string): Promise<DatasetSampleInput[]> {
