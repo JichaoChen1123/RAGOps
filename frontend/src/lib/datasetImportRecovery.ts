@@ -12,11 +12,60 @@ export type DatasetImportRecovery = {
 
 const key = (projectId: string) => `ragops.dataset-import-recovery.${projectId}`;
 
-export const sampleFingerprint = (samples: DatasetSampleInput[]) => samples.map((sample) => sample.sampleId).sort().join('|');
+/**
+ * The API normalizes absent import fields to these values.  Treating those
+ * representations as equivalent makes a response round-trip comparable to the
+ * JSONL the user selected, while every supplied value remains significant.
+ */
+function normalizeSample(sample: DatasetSampleInput) {
+  return {
+    sampleId: sample.sampleId,
+    question: sample.question,
+    labels: {
+      referenceAnswer: sample.labels?.referenceAnswer ?? null,
+      referenceAnswers: sample.labels?.referenceAnswers ?? [],
+      goldDocumentIds: sample.labels?.goldDocumentIds ?? [],
+      goldEvidenceIds: sample.labels?.goldEvidenceIds ?? [],
+      expectedDiagnoses: sample.labels?.expectedDiagnoses ?? [],
+    },
+    contexts: (sample.contexts ?? []).map((context) => ({
+      origin: context.origin,
+      rank: context.rank,
+      rankBefore: context.rankBefore ?? null,
+      retrievalRunId: context.retrievalRunId ?? null,
+      docId: context.docId,
+      chunkId: context.chunkId,
+      evidenceIds: context.evidenceIds ?? [],
+      text: context.text,
+      score: context.score ?? null,
+      relevanceGrade: context.relevanceGrade ?? null,
+      usefulness: context.usefulness ?? null,
+    })),
+    historicalOutput: sample.historicalOutput ?? null,
+    tags: sample.tags ?? [],
+    metadata: sample.metadata ?? {},
+  };
+}
+
+function stableJson(value: unknown): string {
+  if (Array.isArray(value)) return `[${value.map(stableJson).join(',')}]`;
+  if (value && typeof value === 'object') {
+    const record = value as Record<string, unknown>;
+    return `{${Object.keys(record).sort().map((key) => `${JSON.stringify(key)}:${stableJson(record[key])}`).join(',')}}`;
+  }
+  return JSON.stringify(value);
+}
+
+const normalizedImport = (samples: DatasetSampleInput[]) => samples
+  .map(normalizeSample)
+  .map(stableJson)
+  .sort();
+
+/** A deterministic content key shared by recovery selection and server checks. */
+export const sampleFingerprint = (samples: DatasetSampleInput[]) => stableJson(normalizedImport(samples));
 
 export function sameImportContent(expected: DatasetSampleInput[], actual: DatasetSampleInput[]) {
-  const actualIds = new Set(actual.map((sample) => sample.sampleId));
-  return expected.length === actualIds.size && expected.every((sample) => actualIds.has(sample.sampleId));
+  return sampleFingerprint(expected) === sampleFingerprint(actual);
 }
 
 export function loadDatasetImportRecovery(projectId: string): DatasetImportRecovery | null {

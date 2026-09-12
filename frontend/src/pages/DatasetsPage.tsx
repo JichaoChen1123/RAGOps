@@ -180,6 +180,25 @@ export function DatasetsPage() {
     let recoveryForAttempt: DatasetImportRecovery | null = importRecovery;
     setSaving(true);
     try {
+      if (importRecovery?.created) {
+        // A resumed import always checks the draft before writing. This avoids
+        // appending to a partially imported dataset after a lost response.
+        const saved = await apiClient.listDatasetSamples(projectId, importRecovery.datasetId);
+        if (sameImportContent(importSamples, saved)) {
+          const dataset = await apiClient.getDataset(projectId, importRecovery.datasetId);
+          clearDatasetImportRecovery(projectId);
+          setImportRecovery(null);
+          setImportProgress({ datasetId: importRecovery.datasetId, created: true, imported: true });
+          setLocalDatasets((current) => [{ ...dataset, mockOnly: apiMode === 'mock' }, ...(current ?? []).filter((item) => item.id !== dataset.id)]);
+          setFeedback('The draft already contains this file; no second import was sent. It remains a draft.');
+          setDialog(null);
+          return;
+        }
+        if (saved.length) {
+          setImportError('The saved draft contains different samples. Import stopped without appending or overwriting it.');
+          return;
+        }
+      }
       const datasetId = importRecovery?.created ? importRecovery.datasetId : (await apiClient.createDataset(projectId, {
         name: importName.trim() || '本地 JSONL 数据集', description: '由本地 JSONL 预检后导入的草稿。', owner: '当前用户', version: 'v0.1',
       })).id;

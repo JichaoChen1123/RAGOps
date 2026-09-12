@@ -13,9 +13,27 @@ describe('dataset JSONL import recovery', () => {
     expect(loadDatasetImportRecovery('project-a')).toBeNull();
   });
 
-  it('only treats the exact saved sample identifiers as a recovered import', () => {
-    expect(sameImportContent(samples, [{ sampleId: 'b', question: 'new' }, { sampleId: 'a', question: 'new' }])).toBe(true);
+  it('compares semantic content rather than only identifiers', () => {
+    expect(sameImportContent(samples, [{ sampleId: 'b', question: 'new' }, { sampleId: 'a', question: 'new' }])).toBe(false);
     expect(sameImportContent(samples, [{ sampleId: 'a', question: '问题 A' }])).toBe(false);
     expect(sameImportContent(samples, [{ sampleId: 'a', question: '问题 A' }, { sampleId: 'a', question: '重复' }])).toBe(false);
+  });
+});
+
+describe('semantic fingerprint normalization', () => {
+  const detailed = [{
+    sampleId: 'semantic', question: 'question',
+    labels: { referenceAnswer: 'answer', referenceAnswers: ['alternate'], goldDocumentIds: ['doc'], goldEvidenceIds: ['evidence'], expectedDiagnoses: ['retrieval'] },
+    contexts: [{ origin: 'provided' as const, rank: 1, docId: 'doc', chunkId: 'chunk', text: 'context', evidenceIds: ['evidence'] }],
+    historicalOutput: { answer: 'old', citations: [{ target: 'chunk' }], recordedAt: '2026-01-01T00:00:00Z' }, tags: ['tag'], metadata: { source: { locale: 'zh-CN' } },
+  }];
+
+  it('normalizes API defaults but preserves every semantic value', () => {
+    const roundTrip = [{ ...detailed[0], contexts: [{ ...detailed[0].contexts[0], rankBefore: null, retrievalRunId: null, score: null, relevanceGrade: null, usefulness: null }] }];
+    expect(sameImportContent(detailed, roundTrip)).toBe(true);
+    expect(sameImportContent(detailed, [{ ...detailed[0], question: 'changed' }])).toBe(false);
+    expect(sameImportContent(detailed, [{ ...detailed[0], labels: { ...detailed[0].labels, referenceAnswers: ['changed'] } }])).toBe(false);
+    expect(sameImportContent(detailed, [{ ...detailed[0], contexts: [{ ...detailed[0].contexts[0], text: 'changed' }] }])).toBe(false);
+    expect(sameImportContent(detailed, [{ ...detailed[0], metadata: { source: { locale: 'en-US' } } }])).toBe(false);
   });
 });

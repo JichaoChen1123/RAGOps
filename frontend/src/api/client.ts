@@ -1160,7 +1160,39 @@ class HttpApiClient implements ApiClient {
 
   async listDatasetSamples(_projectId: string, datasetId: string): Promise<DatasetSampleInput[]> {
     const payload = await this.request<{ items: Array<Record<string, unknown>> }>(`/datasets/${datasetId}/samples`);
-    return payload.items.map((item) => { const labels = asRecord(item.labels); return { sampleId: String(item.sample_id), question: String(item.question), labels: { referenceAnswer: typeof labels?.reference_answer === 'string' ? labels.reference_answer : null, referenceAnswers: Array.isArray(labels?.reference_answers) ? labels.reference_answers.filter((answer): answer is string => typeof answer === 'string') : [] }, contexts: Array.isArray(item.contexts) ? item.contexts as DatasetSampleInput['contexts'] : [], metadata: item.metadata as Record<string, unknown> ?? {} }; });
+    return payload.items.map((item) => {
+      const labels = asRecord(item.labels);
+      const historical = asRecord(item.historical_output);
+      return {
+        sampleId: String(item.sample_id),
+        question: String(item.question),
+        labels: {
+          referenceAnswer: typeof labels?.reference_answer === 'string' ? labels.reference_answer : null,
+          referenceAnswers: Array.isArray(labels?.reference_answers) ? labels.reference_answers.filter((answer): answer is string => typeof answer === 'string') : [],
+          goldDocumentIds: Array.isArray(labels?.gold_document_ids) ? labels.gold_document_ids.filter((id): id is string => typeof id === 'string') : [],
+          goldEvidenceIds: Array.isArray(labels?.gold_evidence_ids) ? labels.gold_evidence_ids.filter((id): id is string => typeof id === 'string') : [],
+          expectedDiagnoses: Array.isArray(labels?.expected_diagnoses) ? labels.expected_diagnoses.filter((id): id is string => typeof id === 'string') : [],
+        },
+        contexts: Array.isArray(item.contexts) ? item.contexts.map((raw) => {
+          const context = asRecord(raw) ?? {};
+          return {
+            origin: String(context.origin) as NonNullable<DatasetSampleInput['contexts']>[number]['origin'], rank: Number(context.rank),
+            rankBefore: typeof context.rank_before === 'number' ? context.rank_before : null,
+            retrievalRunId: typeof context.retrieval_run_id === 'string' ? context.retrieval_run_id : null,
+            docId: String(context.doc_id), chunkId: String(context.chunk_id),
+            evidenceIds: Array.isArray(context.evidence_ids) ? context.evidence_ids.filter((id): id is string => typeof id === 'string') : [],
+            text: String(context.text), score: typeof context.score === 'number' ? context.score : null,
+            relevanceGrade: typeof context.relevance_grade === 'number' ? context.relevance_grade : null,
+            usefulness: typeof context.usefulness === 'boolean' ? context.usefulness : null,
+          };
+        }) : [],
+        historicalOutput: historical && typeof historical.answer === 'string' && typeof historical.recorded_at === 'string' && Array.isArray(historical.citations)
+          ? { answer: historical.answer, citations: historical.citations.filter((citation): citation is Record<string, unknown> => Boolean(asRecord(citation))), recordedAt: historical.recorded_at }
+          : null,
+        tags: Array.isArray(item.tags) ? item.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+        metadata: item.metadata as Record<string, unknown> ?? {},
+      };
+    });
   }
 
   async createDataset(_projectId: string, input: DatasetCreateInput): Promise<Dataset> {
