@@ -1,14 +1,16 @@
 import { ChevronLeft, ChevronRight, Layers3 } from 'lucide-react';
-import { useId, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react';
 
 /** Only the active record mounts its controls; rear layers are selectable previews. */
 export function CardStack<T extends { id: string }>({
-  items, label, getLabel, renderItem,
+  items, label, getLabel, renderItem, onCurrentItemDisplayed,
 }: {
   items: T[];
   label: string;
   getLabel: (item: T) => string;
   renderItem: (item: T) => ReactNode;
+  /** Called only for the mounted, foreground card after it becomes current. */
+  onCurrentItemDisplayed?: (item: T) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const helpId = useId();
@@ -16,6 +18,10 @@ export function CardStack<T extends { id: string }>({
   const select = (index: number) => {
     if (items.length) setSelectedId(items[(index + items.length) % items.length].id);
   };
+  const currentItem = items[selectedIndex];
+  useEffect(() => {
+    if (currentItem) onCurrentItemDisplayed?.(currentItem);
+  }, [currentItem?.id, onCurrentItemDisplayed]);
   if (!items.length) return <p className="stack-empty">暂无可浏览记录。</p>;
   const visible = Array.from({ length: Math.min(items.length, 3) }, (_, depth) => ({
     item: items[(selectedIndex + depth) % items.length], depth,

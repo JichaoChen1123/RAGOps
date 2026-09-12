@@ -229,6 +229,9 @@ export interface SampleSummary {
   metricState?: 'metrics_calculated' | 'metrics_not_calculated';
   qualityGateState?: 'quality_gate_not_configured' | 'quality_gate_configured_pending' | 'quality_gate_evaluated';
   reviewStatus: SampleReviewStatus;
+  /** Persisted per evaluation-job sample; intentionally unrelated to review. */
+  viewedAt: string | null;
+  viewedBy: string | null;
   contexts: ContextEvidence[];
   citations: CitationEvidence[];
   error: ModelErrorSummary | null;

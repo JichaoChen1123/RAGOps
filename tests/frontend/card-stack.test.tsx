@@ -1,6 +1,6 @@
 import { render, screen, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
-import { describe, expect, it } from 'vitest';
+import { describe, expect, it, vi } from 'vitest';
 import { CardStack } from '../../frontend/src/components/CardStack';
 
 const records = Array.from({ length: 6 }, (_, index) => ({ id: `run-${index}`, label: `运行 ${index + 1}` }));
@@ -58,5 +58,16 @@ describe('CardStack browsing and changing data', () => {
     within(screen.getByRole('article')).getByRole('textbox').focus();
     await user.keyboard('{ArrowRight}{End}');
     expect(screen.getByRole('article')).toHaveAccessibleName('运行 1');
+  });
+
+  it('reports only the foreground card after it is mounted, never its preview layers', async () => {
+    const user = userEvent.setup();
+    const displayed = vi.fn();
+    render(<CardStack items={records} {...props} onCurrentItemDisplayed={displayed} />);
+    expect(displayed).toHaveBeenCalledTimes(1);
+    expect(displayed).toHaveBeenLastCalledWith(records[0]);
+    await user.click(screen.getByRole('button', { name: '运行：下一项' }));
+    expect(displayed).toHaveBeenCalledTimes(2);
+    expect(displayed).toHaveBeenLastCalledWith(records[1]);
   });
 });

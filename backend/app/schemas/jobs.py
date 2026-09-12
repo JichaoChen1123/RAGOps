@@ -260,6 +260,8 @@ class EvaluationSampleResponse(BaseModel):
     diagnoses: list[dict[str, Any]]
     review_status: ReviewStatus
     reviewed_at: datetime | None
+    viewed_at: datetime | None
+    viewed_by: str | None
     latency_ms: int | None
     failure_code: str | None
     failure_message: str | None

@@ -808,6 +808,8 @@ def _sample_to_response(row: EvaluationJobSample) -> EvaluationSampleResponse:
         diagnoses=row.diagnoses,
         review_status=row.review_status,
         reviewed_at=row.reviewed_at,
+        viewed_at=row.viewed_at,
+        viewed_by=row.viewed_by,
         latency_ms=row.latency_ms,
         failure_code=row.failure_code,
         failure_message=row.failure_message,

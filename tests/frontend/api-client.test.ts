@@ -122,6 +122,8 @@ const rawSampleV2 = {
   diagnoses: [],
   review_status: 'pending',
   reviewed_at: null,
+  viewed_at: null,
+  viewed_by: null,
 };
 
 const rawDiagnosedSampleV2 = {
@@ -500,6 +502,18 @@ describe('typed API client 2.0 semantics', () => {
       expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ review_status: 'confirmed' }) }),
     );
     expect(result).toMatchObject({ id: 'result-1', reviewStatus: 'confirmed', qualityStatus: 'not_evaluated' });
+  });
+
+  it('marks a job sample viewed with a distinct browsing payload', async () => {
+    const fetcher = vi.fn(async () => jsonResponse({ ...rawSampleV2, viewed_at: '2026-09-12T00:00:00Z', viewed_by: 'local-user' })) as unknown as typeof fetch;
+    const client = createApiClient({ mode: 'api', baseUrl: '/api/v1', fetcher });
+
+    await client.markSampleViewed('project-a', 'job-1', 'job-sample-1', 'local-user');
+
+    expect(fetcher).toHaveBeenCalledWith(
+      '/api/v1/evaluation-jobs/job-1/samples/job-sample-1/viewed',
+      expect.objectContaining({ method: 'PATCH', body: JSON.stringify({ viewer_id: 'local-user' }) }),
+    );
   });
 });
 

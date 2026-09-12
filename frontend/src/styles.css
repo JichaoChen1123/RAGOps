@@ -169,13 +169,14 @@ td .status-badge { white-space: nowrap; }
 .row-archived td { color: var(--muted); }
 
 /* Independent runtime, execution, quality and review states. */
-.status-badge, .mock-label, .archive-label, .metric-gate { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; font-size: 11px; line-height: 1.4; font-weight: 600; font-style: normal; border-radius: 12px; color: var(--muted); background: var(--surface-light); }
+.status-badge, .mock-label, .archive-label, .metric-gate, .viewed-marker { display: inline-flex; align-items: center; gap: 5px; padding: 5px 9px; font-size: 11px; line-height: 1.4; font-weight: 600; font-style: normal; border-radius: 12px; color: var(--muted); background: var(--surface-light); }
 .status-badge::before { content: ''; width: 5px; height: 5px; background: currentColor; border-radius: 50%; flex-shrink: 0; }
 .status-completed, .status-ready, .status-healthy, .status-passed, .status-confirmed, .status-succeeded, .status-evaluated, .status-verified, .gate-pass { color: var(--green); }
 .status-failed, .status-critical, .status-dismissed, .status-error, .gate-fail { color: var(--red); }
 .status-warning, .status-partial, .status-partial_failed, .status-configured_unverified, .status-cancelled { color: var(--amber); }
 .status-running, .status-indexing { color: var(--accent); }
 .mock-label { font-size: 10px; color: var(--amber); margin-left: 5px; }
+.viewed-marker { color: var(--success); padding: 3px 7px; }
 .archive-label { margin-left: 5px; }
 .text-critical, .delta-down { color: var(--red); }
 .text-positive, .delta-up { color: var(--green); }

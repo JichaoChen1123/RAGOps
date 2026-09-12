@@ -133,6 +133,8 @@ interface RawEvaluationSample {
   quality_gate_state?: 'quality_gate_not_configured' | 'quality_gate_configured_pending' | 'quality_gate_evaluated';
   review_status: SampleReviewStatus;
   reviewed_at: string | null;
+  viewed_at?: string | null;
+  viewed_by?: string | null;
   latency_ms?: number | null;
   failure_code?: string | null;
   failure_message?: string | null;
@@ -521,6 +523,8 @@ function mapSample(raw: RawEvaluationSample): SampleSummary {
     metricState: raw.metric_state,
     qualityGateState: raw.quality_gate_state,
     reviewStatus: raw.review_status,
+    viewedAt: raw.viewed_at ?? null,
+    viewedBy: raw.viewed_by ?? null,
     contexts: parts.contexts,
     citations: parts.citations,
     error: parts.error,
