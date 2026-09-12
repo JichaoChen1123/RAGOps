@@ -143,8 +143,19 @@ export function DatasetsPage() {
     setImportError(parsed.error);
     if (parsed.error) { setImportSamples(null); return; }
     const name = file.name.replace(/\.jsonl$/i, '') || '本地 JSONL 数据集';
-    if (importRecovery && sampleFingerprint(parsed.samples) !== importRecovery.fingerprint) {
+    if (importRecovery && !sameImportContent(parsed.samples, importRecovery.samples)) {
       setPendingImport({ samples: parsed.samples, name, fileName: file.name });
+      return;
+    }
+    if (importRecovery) {
+      // Re-selecting the same file is a resume action. Keep its draft ID and
+      // progress instead of letting applyParsedImport clear recovery state.
+      setImportSamples(parsed.samples);
+      setImportError(null);
+      setImportName(importRecovery.name);
+      setImportFileName(file.name);
+      setImportProgress({ datasetId: importRecovery.datasetId, created: importRecovery.created, imported: importRecovery.imported });
+      setPendingImport(null);
       return;
     }
     applyParsedImport(parsed.samples, name, file.name);
@@ -382,9 +393,9 @@ export function DatasetsPage() {
         title="导入本地 JSONL"
         eyebrow="PREVIEW BEFORE WRITE"
         onClose={() => setDialog(null)}
-        footer={<><button className="button button-secondary" type="button" onClick={() => setDialog(null)}>取消</button><button className="button button-secondary" type="button" onClick={() => void importExample()} disabled={saving}>导入演示数据</button><button className="button button-primary" type="button" onClick={() => void importLocalFile()} disabled={saving || !importSamples}>{saving ? '导入中' : '确认创建草稿并导入'}</button></>}
+        footer={<><button className="button button-secondary" type="button" onClick={() => setDialog(null)}>取消</button><button className="button button-secondary" type="button" onClick={() => void importExample()} disabled={saving}>导入演示数据</button><button data-testid="confirm-local-jsonl-import" className="button button-primary" type="button" onClick={() => void importLocalFile()} disabled={saving || !importSamples}>{saving ? '导入中' : '确认创建草稿并导入'}</button></>}
       >
-        <input ref={fileInput} type="file" accept=".jsonl,application/jsonl,application/x-ndjson" hidden onChange={(event) => void receiveJsonl(event.target.files?.[0])} />
+        <input data-testid="local-jsonl-input" ref={fileInput} type="file" accept=".jsonl,application/jsonl,application/x-ndjson" hidden onChange={(event) => void receiveJsonl(event.target.files?.[0])} />
         <button className="file-drop-zone" type="button" onClick={() => fileInput.current?.click()} onDragOver={(event: DragEvent<HTMLButtonElement>) => event.preventDefault()} onDrop={(event: DragEvent<HTMLButtonElement>) => { event.preventDefault(); void receiveJsonl(event.dataTransfer.files[0]); }}>
           拖放 JSONL 文件到这里，或点击选择文件（UTF-8，支持 BOM / LF / CRLF）
         </button>

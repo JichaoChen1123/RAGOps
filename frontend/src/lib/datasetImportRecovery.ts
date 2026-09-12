@@ -17,13 +17,27 @@ const key = (projectId: string) => `ragops.dataset-import-recovery.${projectId}`
  * representations as equivalent makes a response round-trip comparable to the
  * JSONL the user selected, while every supplied value remains significant.
  */
+function normalizedReferenceAnswers(sample: DatasetSampleInput): string[] {
+  const labels = sample.labels?.referenceAnswers;
+  if (labels && labels.length > 0) return labels;
+  const metadataReferences = sample.metadata?.reference_answers;
+  return Array.isArray(metadataReferences)
+    ? metadataReferences.filter((answer): answer is string => typeof answer === 'string')
+    : [];
+}
+
 function normalizeSample(sample: DatasetSampleInput) {
+  // The API stores v2 alternate references in labels and, for compatibility,
+  // echoes them in metadata.reference_answers.  It is one logical field, not
+  // two independent values, so normalize both representations before deciding
+  // whether a draft can safely be resumed.
+  const { reference_answers: _derivedReferenceAnswers, ...metadata } = sample.metadata ?? {};
   return {
     sampleId: sample.sampleId,
     question: sample.question,
     labels: {
       referenceAnswer: sample.labels?.referenceAnswer ?? null,
-      referenceAnswers: sample.labels?.referenceAnswers ?? [],
+      referenceAnswers: normalizedReferenceAnswers(sample),
       goldDocumentIds: sample.labels?.goldDocumentIds ?? [],
       goldEvidenceIds: sample.labels?.goldEvidenceIds ?? [],
       expectedDiagnoses: sample.labels?.expectedDiagnoses ?? [],
@@ -43,7 +57,7 @@ function normalizeSample(sample: DatasetSampleInput) {
     })),
     historicalOutput: sample.historicalOutput ?? null,
     tags: sample.tags ?? [],
-    metadata: sample.metadata ?? {},
+    metadata,
   };
 }
 

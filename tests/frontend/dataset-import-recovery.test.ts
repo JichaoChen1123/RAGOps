@@ -36,4 +36,25 @@ describe('semantic fingerprint normalization', () => {
     expect(sameImportContent(detailed, [{ ...detailed[0], contexts: [{ ...detailed[0].contexts[0], text: 'changed' }] }])).toBe(false);
     expect(sameImportContent(detailed, [{ ...detailed[0], metadata: { source: { locale: 'en-US' } } }])).toBe(false);
   });
+
+  it('treats the API compatibility echo for alternate references as one field', () => {
+    const input = [{
+      sampleId: 'references', question: 'question',
+      labels: { referenceAnswer: 'primary', referenceAnswers: ['first', 'second'] },
+      metadata: { source: 'cmrc' },
+    }];
+    const apiRoundTrip = [{
+      ...input[0],
+      metadata: { source: 'cmrc', reference_answers: ['first', 'second'] },
+    }];
+    const metadataOnlyLegacy = [{
+      ...input[0],
+      labels: { referenceAnswer: 'primary', referenceAnswers: [] },
+      metadata: { source: 'cmrc', reference_answers: ['first', 'second'] },
+    }];
+
+    expect(sameImportContent(input, apiRoundTrip)).toBe(true);
+    expect(sameImportContent(input, metadataOnlyLegacy)).toBe(true);
+    expect(sameImportContent(input, [{ ...apiRoundTrip[0], labels: { referenceAnswer: 'primary', referenceAnswers: ['second', 'first'] } }])).toBe(false);
+  });
 });
