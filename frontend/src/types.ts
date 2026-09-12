@@ -238,6 +238,7 @@ export interface SampleSummary {
 
 export interface DatasetSampleLabelsInput {
   referenceAnswer?: string | null;
+  referenceAnswers?: string[];
   goldDocumentIds?: string[];
   goldEvidenceIds?: string[];
   expectedDiagnoses?: string[];

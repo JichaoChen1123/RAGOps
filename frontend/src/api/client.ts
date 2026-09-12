@@ -679,6 +679,7 @@ function serializeSampleInput(sample: DatasetSampleInput) {
     question: sample.question,
     labels: {
       reference_answer: sample.labels?.referenceAnswer ?? null,
+      reference_answers: sample.labels?.referenceAnswers ?? [],
       gold_document_ids: sample.labels?.goldDocumentIds ?? [],
       gold_evidence_ids: sample.labels?.goldEvidenceIds ?? [],
       expected_diagnoses: sample.labels?.expectedDiagnoses ?? [],
@@ -1140,7 +1141,7 @@ class HttpApiClient implements ApiClient {
 
   async listDatasetSamples(_projectId: string, datasetId: string): Promise<DatasetSampleInput[]> {
     const payload = await this.request<{ items: Array<Record<string, unknown>> }>(`/datasets/${datasetId}/samples`);
-    return payload.items.map((item) => ({ sampleId: String(item.sample_id), question: String(item.question), labels: { referenceAnswer: typeof item.reference_answer === 'string' ? item.reference_answer : null }, contexts: Array.isArray(item.contexts) ? item.contexts as DatasetSampleInput['contexts'] : [], metadata: item.metadata as Record<string, unknown> ?? {} }));
+    return payload.items.map((item) => { const labels = asRecord(item.labels); return { sampleId: String(item.sample_id), question: String(item.question), labels: { referenceAnswer: typeof labels?.reference_answer === 'string' ? labels.reference_answer : null, referenceAnswers: Array.isArray(labels?.reference_answers) ? labels.reference_answers.filter((answer): answer is string => typeof answer === 'string') : [] }, contexts: Array.isArray(item.contexts) ? item.contexts as DatasetSampleInput['contexts'] : [], metadata: item.metadata as Record<string, unknown> ?? {} }; });
   }
 
   async createDataset(_projectId: string, input: DatasetCreateInput): Promise<Dataset> {

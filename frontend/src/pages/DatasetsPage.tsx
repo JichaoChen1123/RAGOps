@@ -1,5 +1,5 @@
 import { Archive, Copy, Eye, FilePlus2, Filter, MoreHorizontal, RefreshCw, Search, Upload } from 'lucide-react';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { useOutletContext, useParams } from 'react-router-dom';
 import { apiClient, apiMode } from '../api/client';
 import { Dialog, Toast } from '../components/Interaction';
@@ -10,6 +10,7 @@ import type { WorkspaceOutletContext } from '../components/WorkspaceShell';
 import { useApiResource } from '../hooks/useApiResource';
 import { copyText } from '../lib/browser';
 import { formatDateTime } from '../lib/format';
+import { parseDatasetJsonl } from '../lib/jsonlDataset';
 import type { Dataset, DatasetSampleInput, DatasetStatus } from '../types';
 
 type DisplayDataset = Dataset & { mockOnly?: boolean; archived?: boolean };
@@ -69,6 +70,11 @@ export function DatasetsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [importSamples, setImportSamples] = useState<DatasetSampleInput[] | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importName, setImportName] = useState('');
+  const [importProgress, setImportProgress] = useState<{ datasetId: string; created: boolean; imported: boolean } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [draft, setDraft] = useState({ name: '', description: '', owner: '当前用户' });
   const { state, retry } = useApiResource(
@@ -112,6 +118,15 @@ export function DatasetsPage() {
     return false;
   };
 
+  const receiveJsonl = async (file: File | undefined) => {
+    if (!file) return;
+    const parsed = parseDatasetJsonl(await file.text());
+    setImportSamples(parsed.samples.length ? parsed.samples : null);
+    setImportError(parsed.error);
+    setImportName(file.name.replace(/\.jsonl$/i, '') || '本地 JSONL 数据集');
+    setImportProgress(null);
+  };
+
   const importExample = async () => {
     setSaving(true);
     try {
@@ -135,6 +150,24 @@ export function DatasetsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const importLocalFile = async () => {
+    if (!importSamples || saving) return;
+    setSaving(true);
+    try {
+      const datasetId = importProgress?.created ? importProgress.datasetId : (await apiClient.createDataset(projectId, {
+        name: importName.trim() || '本地 JSONL 数据集', description: '由本地 JSONL 预检后导入的草稿。', owner: '当前用户', version: 'v0.1',
+      })).id;
+      setImportProgress({ datasetId, created: true, imported: false });
+      const imported = await apiClient.importDatasetSamples(projectId, datasetId, importSamples);
+      setImportProgress({ datasetId, created: true, imported: true });
+      setLocalDatasets((current) => [{ ...imported.dataset, mockOnly: apiMode === 'mock' }, ...(current ?? [])]);
+      setFeedback(`已导入 ${importSamples.length} 条本地 JSONL 样本；数据集仍为草稿，请单独发布。`);
+      setDialog(null);
+    } catch (error) {
+      setImportError(error instanceof Error ? error.message : '导入失败，可在修复后重试剩余步骤。');
+    } finally { setSaving(false); }
   };
 
   const publishDataset = async (dataset: DisplayDataset) => {
@@ -202,7 +235,9 @@ export function DatasetsPage() {
     setFeedback(dataset.archived ? `已恢复 Mock 数据集“${dataset.name}”` : `已将“${dataset.name}”标记为归档（Mock）`);
   };
 
-  const openImport = () => setDialog('import');
+  const openImport = () => {
+    setImportSamples(null); setImportError(null); setImportProgress(null); setImportName(''); setDialog('import');
+  };
 
   return (
     <>
@@ -261,7 +296,7 @@ export function DatasetsPage() {
       </Panel>
 
       <Dialog
-        open={dialog === 'import'}
+        open={false}
         title="导入示例 JSONL"
         eyebrow={apiMode === 'mock' ? 'MOCK IMPORT' : 'API IMPORT'}
         onClose={() => setDialog(null)}
@@ -270,6 +305,22 @@ export function DatasetsPage() {
         <p>演示文件包含 12 条人工构造样本，使用 2.0 契约分开问题、参考标签、给定上下文和历史输出。</p>
         <pre className="jsonl-preview">{`{"schema_version":"2.0","sample_id":"refund-example-01","question":"退款后成长值如何处理？","labels":{"reference_answer":"按退款金额比例扣回。","gold_document_ids":["doc-refund-policy-01"]},"contexts":[{"origin":"provided","rank":1,"retrieval_run_id":null,"doc_id":"doc-refund-policy-01","chunk_id":"chunk-refund-policy-01","text":"退款成功后，成长值按退款商品实付金额比例扣回。","score":null}]}`}</pre>
         <p className="form-hint">{apiMode === 'mock' ? '将在内存中依次创建、导入和发布，并明确标记为 MOCK。' : '将依次调用创建、样本导入和发布接口；任一步失败都会显示后端错误，不会改用 fixture。'}</p>
+      </Dialog>
+
+      <Dialog
+        open={dialog === 'import'}
+        title="导入本地 JSONL"
+        eyebrow="PREVIEW BEFORE WRITE"
+        onClose={() => setDialog(null)}
+        footer={<><button className="button button-secondary" type="button" onClick={() => setDialog(null)}>取消</button><button className="button button-secondary" type="button" onClick={() => void importExample()} disabled={saving}>导入演示数据</button><button className="button button-primary" type="button" onClick={() => void importLocalFile()} disabled={saving || !importSamples}>{saving ? '导入中' : '确认创建草稿并导入'}</button></>}
+      >
+        <input ref={fileInput} type="file" accept=".jsonl,application/jsonl,application/x-ndjson" hidden onChange={(event) => void receiveJsonl(event.target.files?.[0])} />
+        <button className="file-drop-zone" type="button" onClick={() => fileInput.current?.click()} onDragOver={(event: DragEvent<HTMLButtonElement>) => event.preventDefault()} onDrop={(event: DragEvent<HTMLButtonElement>) => { event.preventDefault(); void receiveJsonl(event.dataTransfer.files[0]); }}>
+          拖放 JSONL 文件到这里，或点击选择文件（UTF-8，支持 BOM / LF / CRLF）
+        </button>
+        {importError && <p className="form-hint" role="alert">{importError}</p>}
+        {importSamples && <><label>数据集名称<input aria-label="导入数据集名称" value={importName} onChange={(event) => setImportName(event.target.value)} /></label><p className="form-hint">预检通过：共 {importSamples.length} 条；示例：{importSamples.slice(0, 3).map((item) => item.question).join('；')}。确认前不会发起写入请求。</p></>}
+        {importProgress && !importProgress.imported && <p className="form-hint">创建已完成（{importProgress.datasetId}），样本导入未完成；可直接重试，不会重复创建数据集。</p>}
       </Dialog>
 
       <Dialog
