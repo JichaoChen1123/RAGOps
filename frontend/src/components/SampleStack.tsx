@@ -1,4 +1,6 @@
-import { ArrowRight } from 'lucide-react';
+import { ArrowRight, Eye } from 'lucide-react';
+import { useCallback, useEffect, useState } from 'react';
+import { apiClient } from '../api/client';
 import { Link } from 'react-router-dom';
 import type { SampleSummary } from '../types';
 import { formatScore } from '../lib/format';
@@ -6,8 +8,39 @@ import { CardStack } from './CardStack';
 import { StatusBadge } from './StatusBadge';
 
 export function SampleStack({ samples, projectId, taskId }: { samples: SampleSummary[]; projectId: string; taskId: string }) {
-  return <CardStack items={samples} label="样本诊断卡片" getLabel={(sample) => sample.sampleId} renderItem={(sample) => <>
-    <div className="record-heading"><span className="record-kind">{sample.sampleId}</span>{sample.isMock === true && <em className="mock-label">SIMULATED</em>}</div>
+  const [displayedSamples, setDisplayedSamples] = useState(samples);
+  const [writingIds, setWritingIds] = useState<Set<string>>(() => new Set());
+  const [viewErrors, setViewErrors] = useState<Record<string, string>>({});
+
+  // A report reload remains the source of truth; a successful local write is reflected immediately.
+  useEffect(() => setDisplayedSamples(samples), [samples]);
+
+  const markCurrentSampleViewed = useCallback(async (sample: SampleSummary) => {
+    if (sample.viewedAt !== null || writingIds.has(sample.id)) return;
+    setWritingIds((ids) => new Set(ids).add(sample.id));
+    setViewErrors((errors) => {
+      const { [sample.id]: _ignored, ...remaining } = errors;
+      return remaining;
+    });
+    try {
+      await apiClient.markSampleViewed(projectId, taskId, sample.id, 'local-workspace-user');
+      setDisplayedSamples((current) => current.map((item) => item.id === sample.id
+        ? { ...item, viewedAt: new Date().toISOString(), viewedBy: 'local-workspace-user' }
+        : item));
+    } catch {
+      setViewErrors((errors) => ({ ...errors, [sample.id]: '浏览记录未保存。请重试；这不会改变人工复核状态。' }));
+    } finally {
+      setWritingIds((ids) => {
+        const next = new Set(ids);
+        next.delete(sample.id);
+        return next;
+      });
+    }
+  }, [projectId, taskId, writingIds]);
+
+  return <>
+    <CardStack items={displayedSamples} label="样本诊断卡片" onCurrentItemDisplayed={(sample) => { void markCurrentSampleViewed(sample); }} getPreviewStatus={(sample) => sample.viewedAt ? '已浏览' : '待浏览'} getLabel={(sample) => sample.sampleId} renderItem={(sample) => <>
+    <div className="record-heading"><span className="record-kind">{sample.sampleId}</span>{sample.viewedAt && <span className="viewed-marker" title={`已浏览：${sample.viewedAt}`}><Eye size={14} />已浏览</span>}{sample.isMock === true && <em className="mock-label">SIMULATED</em>}</div>
     <h3>{sample.question}</h3>
     <dl className="record-states">
       <div><dt>样本执行</dt><dd><StatusBadge value={sample.runStatus} /></dd></div>
@@ -29,5 +62,15 @@ export function SampleStack({ samples, projectId, taskId }: { samples: SampleSum
     </dl>
     {sample.error && <p className="text-critical">{sample.error.code}{sample.error.reasonCode ? ` · ${sample.error.reasonCode}` : ''}{sample.error.diagnosticId ? ` · 诊断 ID ${sample.error.diagnosticId}` : ''} · {sample.error.message}</p>}
     <footer className="record-footer"><span>{sample.contexts.length} 条上下文 · {sample.citations.length} 条引用</span><Link aria-label={`诊断样本 ${sample.id}`} className="button button-secondary" to={`/projects/${projectId}/evaluations/${taskId}/samples/${sample.id}`}>诊断 <ArrowRight size={16} /></Link></footer>
-  </>} />;
+    </>} />
+    {Object.entries(viewErrors).map(([sampleId, message]) => (
+      <div className="viewed-save-error" role="alert" key={sampleId}>
+        <span>{message}</span>
+        <button type="button" className="button button-secondary" onClick={() => {
+          const sample = displayedSamples.find((item) => item.id === sampleId);
+          if (sample) void markCurrentSampleViewed(sample);
+        }} disabled={writingIds.has(sampleId)}>重试保存浏览记录</button>
+      </div>
+    ))}
+  </>;
 }

@@ -38,24 +38,17 @@ describe('workspace navigation and RAGOps capabilities', () => {
     }
   });
 
-  it('distinguishes active, available, coming-soon and disabled navigation entries', async () => {
-    const user = userEvent.setup();
+  it('keeps only implemented navigation entries and the single project identity', async () => {
     renderOverview();
     await screen.findByRole('heading', { level: 2, name: '客服 RAG 生产线' });
 
     expect(screen.getByRole('link', { name: '项目概览' })).toHaveClass('active');
     expect(screen.getByRole('link', { name: '趋势看板，从概览查看' })).toHaveTextContent('LIVE');
 
-    const comingSoon = screen.getByRole('button', { name: '版本对比，即将推出' });
-    expect(comingSoon).toHaveTextContent('NEXT');
-    await user.click(comingSoon);
-    const roadmap = screen.getByRole('dialog', { name: '版本对比 · 下一阶段' });
-    expect(within(roadmap).getByText(/选择基线任务|基线任务/)).toBeInTheDocument();
-    expect(within(roadmap).getByText('指标回归')).toBeInTheDocument();
-
-    const projectSettings = screen.getByRole('button', { name: '项目设置，连接 API 后开放' });
-    expect(projectSettings).toBeDisabled();
-    expect(projectSettings).toHaveTextContent('连接 API 后开放');
+    expect(screen.getByLabelText('当前项目')).toHaveTextContent('客服 RAG 生产线');
+    expect(screen.queryByText('其他项目')).not.toBeInTheDocument();
+    expect(screen.queryByText('版本对比')).not.toBeInTheDocument();
+    expect(screen.queryByText('项目设置')).not.toBeInTheDocument();
   });
 
   it('shows the complete evaluation pipeline and engineering capability matrix', async () => {

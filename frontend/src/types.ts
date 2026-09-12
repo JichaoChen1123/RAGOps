@@ -229,6 +229,9 @@ export interface SampleSummary {
   metricState?: 'metrics_calculated' | 'metrics_not_calculated';
   qualityGateState?: 'quality_gate_not_configured' | 'quality_gate_configured_pending' | 'quality_gate_evaluated';
   reviewStatus: SampleReviewStatus;
+  /** Persisted per evaluation-job sample; intentionally unrelated to review. */
+  viewedAt: string | null;
+  viewedBy: string | null;
   contexts: ContextEvidence[];
   citations: CitationEvidence[];
   error: ModelErrorSummary | null;
@@ -238,6 +241,7 @@ export interface SampleSummary {
 
 export interface DatasetSampleLabelsInput {
   referenceAnswer?: string | null;
+  referenceAnswers?: string[];
   goldDocumentIds?: string[];
   goldEvidenceIds?: string[];
   expectedDiagnoses?: string[];
@@ -287,6 +291,7 @@ export interface DatasetImportResult {
 
 export interface EvaluationTaskCreateInput {
   datasetId: string;
+  sampleIds?: string[];
   name?: string;
   adapterId: ModelChannel;
   prompt: PromptSnapshot;
@@ -425,11 +430,14 @@ export interface ApiClient {
     input: { model?: string; performGeneration: boolean },
   ): Promise<ProviderVerificationResult>;
   listDatasets(projectId: string): Promise<Dataset[]>;
+  getDataset(projectId: string, datasetId: string): Promise<Dataset>;
+  listDatasetSamples(projectId: string, datasetId: string): Promise<DatasetSampleInput[]>;
   createDataset(projectId: string, input: DatasetCreateInput): Promise<Dataset>;
   importDatasetSamples(projectId: string, datasetId: string, samples: DatasetSampleInput[]): Promise<DatasetImportResult>;
   publishDataset(projectId: string, datasetId: string): Promise<Dataset>;
   listEvaluationTasks(projectId: string): Promise<EvaluationTask[]>;
   createEvaluationTask(projectId: string, input: EvaluationTaskCreateInput): Promise<EvaluationTask>;
+  markSampleViewed(projectId: string, taskId: string, jobSampleId: string, viewerId: string): Promise<void>;
   getEvaluationReport(projectId: string, taskId: string): Promise<EvaluationReport>;
   exportEvaluationReport(projectId: string, taskId: string): Promise<ReportExport>;
   getSampleDiagnosis(projectId: string, taskId: string, sampleId: string): Promise<SampleDiagnosis>;

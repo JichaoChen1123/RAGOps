@@ -16,6 +16,7 @@ from app.schemas.jobs import (
     AnswerRescoreListResponse,
     ReportExportResponse,
     SampleReviewUpdate,
+    SampleViewedUpdate,
 )
 from app.services import jobs as service
 
@@ -100,6 +101,11 @@ def update_sample_review(
     session: SessionDep,
 ) -> EvaluationSampleResponse:
     return service.update_sample_review(session, job_id, sample_id, payload)
+
+
+@router.patch("/{job_id}/samples/{sample_id}/viewed", response_model=EvaluationSampleResponse, summary="Persist a displayed job-sample browsing marker")
+def mark_sample_viewed(job_id: str, sample_id: str, payload: SampleViewedUpdate, session: SessionDep) -> EvaluationSampleResponse:
+    return service.mark_sample_viewed(session, job_id, sample_id, payload)
 
 
 @router.get(
