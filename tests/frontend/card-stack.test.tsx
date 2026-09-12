@@ -70,4 +70,10 @@ describe('CardStack browsing and changing data', () => {
     expect(displayed).toHaveBeenCalledTimes(2);
     expect(displayed).toHaveBeenLastCalledWith(records[1]);
   });
+
+  it('uses the caller-provided persisted status for rear-card previews', () => {
+    render(<CardStack items={records.slice(0, 3)} {...props} getPreviewStatus={(item) => item.id === 'run-1' ? '已浏览' : '待浏览'} />);
+    expect(screen.getByRole('button', { name: '翻阅：运行 2' })).toHaveTextContent('已浏览');
+    expect(screen.getByRole('button', { name: '翻阅：运行 3' })).toHaveTextContent('待浏览');
+  });
 });

@@ -1,27 +1,31 @@
 import { ChevronLeft, ChevronRight, Layers3 } from 'lucide-react';
-import { useEffect, useId, useState, type CSSProperties, type ReactNode } from 'react';
+import { useEffect, useId, useRef, useState, type CSSProperties, type ReactNode } from 'react';
 
 /** Only the active record mounts its controls; rear layers are selectable previews. */
 export function CardStack<T extends { id: string }>({
-  items, label, getLabel, renderItem, onCurrentItemDisplayed,
+  items, label, getLabel, getPreviewStatus, renderItem, onCurrentItemDisplayed,
 }: {
   items: T[];
   label: string;
   getLabel: (item: T) => string;
+  /** Optional persisted status displayed on rear-card previews. */
+  getPreviewStatus?: (item: T) => string;
   renderItem: (item: T) => ReactNode;
   /** Called only for the mounted, foreground card after it becomes current. */
   onCurrentItemDisplayed?: (item: T) => void;
 }) {
   const [selectedId, setSelectedId] = useState<string | null>(null);
   const helpId = useId();
+  const displayCallbackRef = useRef(onCurrentItemDisplayed);
+  displayCallbackRef.current = onCurrentItemDisplayed;
   const selectedIndex = Math.max(0, items.findIndex((item) => item.id === selectedId));
   const select = (index: number) => {
     if (items.length) setSelectedId(items[(index + items.length) % items.length].id);
   };
   const currentItem = items[selectedIndex];
   useEffect(() => {
-    if (currentItem) onCurrentItemDisplayed?.(currentItem);
-  }, [currentItem?.id, onCurrentItemDisplayed]);
+    if (currentItem) displayCallbackRef.current?.(currentItem);
+  }, [currentItem?.id]);
   if (!items.length) return <p className="stack-empty">暂无可浏览记录。</p>;
   const visible = Array.from({ length: Math.min(items.length, 3) }, (_, depth) => ({
     item: items[(selectedIndex + depth) % items.length], depth,
@@ -50,7 +54,7 @@ export function CardStack<T extends { id: string }>({
                 select(selectedIndex + depth);
                 // The preview will unmount; retain an intentional keyboard focus target.
                 document.getElementById(helpId)?.closest<HTMLElement>('.card-stack')?.focus({ preventScroll: true });
-              }}><span>待浏览</span><span>{String((selectedIndex + depth) % items.length + 1).padStart(2, '0')}</span></button>
+              }}><span>{getPreviewStatus?.(item) ?? '待浏览'}</span><span>{String((selectedIndex + depth) % items.length + 1).padStart(2, '0')}</span></button>
             )}
           </div>
         ))}
