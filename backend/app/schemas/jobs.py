@@ -134,6 +134,9 @@ class EvaluationJobCreate(BaseModel):
 
     schema_version: Literal["1.0", "2.0"] | None = None
     dataset_id: str = Field(min_length=1)
+    # Omitted retains the v2 behaviour (all samples). An explicit empty list is
+    # never silently widened to all samples.
+    sample_ids: list[str] | None = None
     name: str | None = Field(default=None, min_length=1, max_length=160)
     execution: ExecutionConfig | None = None
     metrics: list[MetricConfig] = Field(default_factory=list)
@@ -164,6 +167,15 @@ class EvaluationJobCreate(BaseModel):
         if self.schema_version == "1.0" and self.execution is not None:
             raise ValueError("schema_version 1.0 cannot include execution")
         return self
+
+    @field_validator("sample_ids")
+    @classmethod
+    def selected_samples_are_nonempty_and_unique(cls, value: list[str] | None) -> list[str] | None:
+        if value is not None and not value:
+            raise ValueError("sample_ids must not be empty when supplied")
+        if value is not None and len(value) != len(set(value)):
+            raise ValueError("sample_ids must not contain duplicates")
+        return value
 
     @property
     def is_legacy_request(self) -> bool:
@@ -295,6 +307,12 @@ class SampleReviewUpdate(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     review_status: ReviewStatus
+
+
+class SampleViewedUpdate(BaseModel):
+    """A viewing event is intentionally independent from human review."""
+    model_config = ConfigDict(extra="forbid")
+    viewer_id: str = Field(min_length=1, max_length=120)
 
 
 class ReportExportResponse(BaseModel):

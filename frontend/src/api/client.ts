@@ -906,6 +906,8 @@ class MockApiClient implements ApiClient {
     return this.respond(this.datasetsState);
   }
 
+  listDatasetSamples(_projectId: string, _datasetId: string): Promise<DatasetSampleInput[]> { return this.respond([]); }
+
   async createDataset(_projectId: string, input: DatasetCreateInput): Promise<Dataset> {
     const created: Dataset = {
       id: `mock-dataset-${Date.now()}`,
@@ -995,7 +997,7 @@ class MockApiClient implements ApiClient {
       adapterId: 'mock',
       providerId: null,
       isMock: true,
-      totalSamples: dataset.sampleCount,
+      totalSamples: input.sampleIds?.length ?? dataset.sampleCount,
       succeededSamples: 0,
       failedSamples: 0,
       schemaVersion: '2.0',
@@ -1004,6 +1006,8 @@ class MockApiClient implements ApiClient {
     this.tasksState.unshift(created);
     return this.respond(created);
   }
+
+  markSampleViewed(_projectId: string, _taskId: string, _jobSampleId: string, _viewerId: string): Promise<void> { return this.respond(undefined); }
 
   getEvaluationReport(_projectId: string, taskId: string): Promise<EvaluationReport> {
     if (taskId !== this.reportState.task.id) return Promise.reject(new ApiError('找不到指定评测报告', 404, 'REPORT_NOT_FOUND'));
@@ -1134,6 +1138,11 @@ class HttpApiClient implements ApiClient {
     return payload.items.map(mapDataset);
   }
 
+  async listDatasetSamples(_projectId: string, datasetId: string): Promise<DatasetSampleInput[]> {
+    const payload = await this.request<{ items: Array<Record<string, unknown>> }>(`/datasets/${datasetId}/samples`);
+    return payload.items.map((item) => ({ sampleId: String(item.sample_id), question: String(item.question), labels: { referenceAnswer: typeof item.reference_answer === 'string' ? item.reference_answer : null }, contexts: Array.isArray(item.contexts) ? item.contexts as DatasetSampleInput['contexts'] : [], metadata: item.metadata as Record<string, unknown> ?? {} }));
+  }
+
   async createDataset(_projectId: string, input: DatasetCreateInput): Promise<Dataset> {
     const payload = await this.request<RawDataset>('/datasets', {
       method: 'POST',
@@ -1172,6 +1181,7 @@ class HttpApiClient implements ApiClient {
       body: {
         schema_version: '2.0',
         dataset_id: input.datasetId,
+        sample_ids: input.sampleIds,
         name: input.name ?? null,
         execution: {
           adapter_id: input.adapterId,
@@ -1192,6 +1202,10 @@ class HttpApiClient implements ApiClient {
       },
     });
     return mapTask(payload);
+  }
+
+  async markSampleViewed(_projectId: string, taskId: string, jobSampleId: string, viewerId: string): Promise<void> {
+    await this.request(`/evaluation-jobs/${taskId}/samples/${jobSampleId}/viewed`, { method: 'PATCH', body: { viewer_id: viewerId } });
   }
 
   async getEvaluationReport(_projectId: string, taskId: string): Promise<EvaluationReport> {

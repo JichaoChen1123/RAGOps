@@ -287,6 +287,7 @@ export interface DatasetImportResult {
 
 export interface EvaluationTaskCreateInput {
   datasetId: string;
+  sampleIds?: string[];
   name?: string;
   adapterId: ModelChannel;
   prompt: PromptSnapshot;
@@ -425,11 +426,13 @@ export interface ApiClient {
     input: { model?: string; performGeneration: boolean },
   ): Promise<ProviderVerificationResult>;
   listDatasets(projectId: string): Promise<Dataset[]>;
+  listDatasetSamples(projectId: string, datasetId: string): Promise<DatasetSampleInput[]>;
   createDataset(projectId: string, input: DatasetCreateInput): Promise<Dataset>;
   importDatasetSamples(projectId: string, datasetId: string, samples: DatasetSampleInput[]): Promise<DatasetImportResult>;
   publishDataset(projectId: string, datasetId: string): Promise<Dataset>;
   listEvaluationTasks(projectId: string): Promise<EvaluationTask[]>;
   createEvaluationTask(projectId: string, input: EvaluationTaskCreateInput): Promise<EvaluationTask>;
+  markSampleViewed(projectId: string, taskId: string, jobSampleId: string, viewerId: string): Promise<void>;
   getEvaluationReport(projectId: string, taskId: string): Promise<EvaluationReport>;
   exportEvaluationReport(projectId: string, taskId: string): Promise<ReportExport>;
   getSampleDiagnosis(projectId: string, taskId: string, sampleId: string): Promise<SampleDiagnosis>;

@@ -124,8 +124,8 @@ export function DatasetsPage() {
         version: 'v0.1',
       });
       const imported = await apiClient.importDatasetSamples(projectId, created.id, exampleSamples);
-      const published = await apiClient.publishDataset(projectId, imported.dataset.id);
-      setLocalDatasets((current) => [{ ...published, mockOnly: apiMode === 'mock' }, ...(current ?? [])]);
+      // Import intentionally leaves the new dataset as a draft; publishing is a separate action.
+      setLocalDatasets((current) => [{ ...imported.dataset, mockOnly: apiMode === 'mock' }, ...(current ?? [])]);
       setDialog(null);
       setFeedback(apiMode === 'mock'
         ? 'Mock 示例已完成创建、导入 12 条 2.0 样本并发布（仅当前会话）'

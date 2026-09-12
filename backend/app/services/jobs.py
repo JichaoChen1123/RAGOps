@@ -37,6 +37,7 @@ from app.schemas.jobs import (
     QualityGate,
     ReportExportResponse,
     SampleReviewUpdate,
+    SampleViewedUpdate,
 )
 
 logger = logging.getLogger(__name__)
@@ -149,6 +150,13 @@ def create_job(
             .order_by(DatasetSample.ordinal)
         )
     )
+    if payload.sample_ids is not None:
+        requested = set(payload.sample_ids)
+        available = {identifier for sample in samples for identifier in (sample.id, sample.external_id)}
+        missing = sorted(requested - available)
+        if missing:
+            raise DomainError("INVALID_DATASET_SAMPLE_IDS", "One or more selected samples do not belong to this dataset.", status_code=422, details={"sample_ids": missing})
+        samples = [sample for sample in samples if sample.id in requested or sample.external_id in requested]
     created_at = utc_now()
     metric_config = [metric.model_dump(mode="json") for metric in payload.metrics]
     snapshot: dict[str, Any] = {
@@ -173,6 +181,7 @@ def create_job(
             "schema_version": dataset.schema_version,
             "content_sha256": dataset.content_sha256,
         },
+        "selection": {"mode": "all" if payload.sample_ids is None else "partial", "sample_ids": [sample.id for sample in samples]},
         "metric_config": metric_config,
         "quality_gate": (
             payload.quality_gate.model_dump(mode="json") if payload.quality_gate else None
@@ -870,6 +879,18 @@ def update_sample_review(
         )
     row.review_status = payload.review_status.value
     row.reviewed_at = None if payload.review_status.value == "pending" else utc_now()
+    session.commit()
+    return _sample_to_response(row)
+
+
+def mark_sample_viewed(session: Session, job_id: str, sample_id: str, payload: SampleViewedUpdate) -> EvaluationSampleResponse:
+    """Persist only a job-sample browsing marker; never touch review/result fields."""
+    get_job(session, job_id)
+    row = session.scalar(select(EvaluationJobSample).options(joinedload(EvaluationJobSample.sample)).where(EvaluationJobSample.job_id == job_id, EvaluationJobSample.id == sample_id))
+    if row is None:
+        raise DomainError("RESOURCE_NOT_FOUND", "Evaluation sample not found.", status_code=404, details={"job_id": job_id, "sample_id": sample_id})
+    row.viewed_by = payload.viewer_id
+    row.viewed_at = utc_now()
     session.commit()
     return _sample_to_response(row)
 
