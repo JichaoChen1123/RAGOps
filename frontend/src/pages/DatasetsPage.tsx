@@ -1,5 +1,5 @@
-import { Copy, Eye, FilePlus2, Filter, MoreHorizontal, RefreshCw, Search, Upload } from 'lucide-react';
-import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
+import { Check, ChevronDown, Copy, Eye, FilePlus2, Filter, MoreHorizontal, RefreshCw, Search, Upload } from 'lucide-react';
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, type CSSProperties, type DragEvent, type FormEvent } from 'react';
 import { useOutletContext, useParams } from 'react-router-dom';
 import { apiClient, apiMode } from '../api/client';
 import { Dialog, Toast } from '../components/Interaction';
@@ -18,6 +18,14 @@ type DisplayDataset = Dataset & { mockOnly?: boolean; archived?: boolean };
 type DatasetDialog = 'import' | 'create' | 'details' | null;
 type DatasetFilter = 'all' | DatasetStatus;
 type DatasetSort = 'updated-desc' | 'updated-asc' | 'name-asc' | 'samples-desc';
+type OpenMenu = { type: 'row'; datasetId: string } | { type: 'sort' } | null;
+
+const sortOptions: { value: DatasetSort; label: string }[] = [
+  { value: 'updated-desc', label: '最近更新' },
+  { value: 'updated-asc', label: '最早更新' },
+  { value: 'name-asc', label: '名称升序' },
+  { value: 'samples-desc', label: '样本量降序' },
+];
 
 const statusOptions: { value: DatasetFilter; label: string }[] = [
   { value: 'all', label: '全部状态' },
@@ -66,7 +74,8 @@ export function DatasetsPage() {
   const [filterOpen, setFilterOpen] = useState(false);
   const [sort, setSort] = useState<DatasetSort>('updated-desc');
   const [dialog, setDialog] = useState<DatasetDialog>(null);
-  const [openMenuId, setOpenMenuId] = useState<string | null>(null);
+  const [openMenu, setOpenMenu] = useState<OpenMenu>(null);
+  const [menuPosition, setMenuPosition] = useState<CSSProperties>({});
   const [selectedDatasetId, setSelectedDatasetId] = useState<string | null>(null);
   const [localDatasets, setLocalDatasets] = useState<DisplayDataset[] | null>(null);
   const [feedback, setFeedback] = useState<string | null>(null);
@@ -82,6 +91,9 @@ export function DatasetsPage() {
   const [pendingImport, setPendingImport] = useState<{ samples: DatasetSampleInput[]; name: string; fileName: string } | null>(null);
   const fileInput = useRef<HTMLInputElement>(null);
   const menuTriggerRefs = useRef(new Map<string, HTMLButtonElement>());
+  const sortTriggerRef = useRef<HTMLButtonElement>(null);
+  const menuRef = useRef<HTMLDivElement>(null);
+  const [drawerReturnFocusId, setDrawerReturnFocusId] = useState<string | null>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [draft, setDraft] = useState({ name: '', description: '', owner: '当前用户' });
   const { state, retry } = useApiResource(
@@ -104,18 +116,41 @@ export function DatasetsPage() {
     setImportFileName(recovery.fileName);
   }, [projectId]);
 
+  const getMenuTrigger = (menu: Exclude<OpenMenu, null>) => menu.type === 'row'
+    ? menuTriggerRefs.current.get(menu.datasetId) : sortTriggerRef.current;
+  const closeMenu = (restoreFocus = true) => {
+    const current = openMenu;
+    setOpenMenu(null);
+    if (restoreFocus && current) requestAnimationFrame(() => getMenuTrigger(current)?.focus());
+  };
+
+  const positionMenu = () => {
+    if (!openMenu) return;
+    const trigger = getMenuTrigger(openMenu);
+    if (!trigger) return;
+    const rect = trigger.getBoundingClientRect();
+    const menuHeight = openMenu.type === 'sort' ? 184 : 100;
+    const width = openMenu.type === 'sort' ? 224 : 190;
+    setMenuPosition({
+      left: Math.max(8, Math.min(rect.right - width, window.innerWidth - width - 8)),
+      top: Math.max(8, Math.min(rect.bottom + 8, window.innerHeight - menuHeight - 8)),
+    });
+  };
+
+  useLayoutEffect(() => { positionMenu(); }, [openMenu]);
+
+  useLayoutEffect(() => {
+    if (openMenu) menuRef.current?.querySelector<HTMLButtonElement>('[role="menuitem"]')?.focus();
+  }, [openMenu]);
+
   useEffect(() => {
-    if (!openMenuId) return undefined;
-    const closeMenu = () => {
-      const id = openMenuId;
-      setOpenMenuId(null);
-      menuTriggerRefs.current.get(id)?.focus();
-    };
+    if (!openMenu) return undefined;
     const onKeyDown = (event: KeyboardEvent) => { if (event.key === 'Escape') { event.preventDefault(); closeMenu(); } };
-    const onPointerDown = (event: PointerEvent) => { if (event.target instanceof Element && !event.target.closest('.row-menu-anchor')) closeMenu(); };
+    const onPointerDown = (event: PointerEvent) => { if (event.target instanceof Node && !menuRef.current?.contains(event.target) && !getMenuTrigger(openMenu)?.contains(event.target)) closeMenu(); };
     document.addEventListener('keydown', onKeyDown); document.addEventListener('pointerdown', onPointerDown);
-    return () => { document.removeEventListener('keydown', onKeyDown); document.removeEventListener('pointerdown', onPointerDown); };
-  }, [openMenuId]);
+    window.addEventListener('resize', positionMenu); window.addEventListener('scroll', positionMenu, true);
+    return () => { document.removeEventListener('keydown', onKeyDown); document.removeEventListener('pointerdown', onPointerDown); window.removeEventListener('resize', positionMenu); window.removeEventListener('scroll', positionMenu, true); };
+  }, [openMenu]);
 
   const datasets: DisplayDataset[] = localDatasets ?? (state.status === 'success' ? state.data : []);
   const filtered = useMemo(() => datasets.filter((dataset) => {
@@ -130,6 +165,8 @@ export function DatasetsPage() {
     return comparison === 0 ? left.index - right.index : comparison * direction;
   }).map(({ dataset }) => dataset), [datasets, query, statusFilter, sort]);
   const selectedDataset = datasets.find((dataset) => dataset.id === selectedDatasetId);
+  const menuDataset = openMenu?.type === 'row' ? datasets.find((dataset) => dataset.id === openMenu.datasetId) : undefined;
+  const selectedSortLabel = sortOptions.find((option) => option.value === sort)?.label ?? '最近更新';
 
   if (state.status === 'loading') return <LoadingState label="正在载入数据集" />;
   if (state.status === 'error') return <ErrorState message={state.message} onRetry={retry} />;
@@ -307,12 +344,19 @@ export function DatasetsPage() {
 
   const showDetails = (datasetId: string) => {
     setSelectedDatasetId(datasetId);
-    setOpenMenuId(null);
+    setDrawerReturnFocusId(datasetId);
+    closeMenu(false);
     setDialog('details');
   };
 
+  const closeDetails = () => {
+    setDialog(null);
+    const id = drawerReturnFocusId;
+    if (id) requestAnimationFrame(() => menuTriggerRefs.current.get(id)?.focus());
+  };
+
   const copyDatasetId = async (dataset: DisplayDataset) => {
-    setOpenMenuId(null);
+    closeMenu();
     try {
       await copyText(dataset.id);
       setFeedback(`已复制数据集 ID：${dataset.id}`);
@@ -347,7 +391,9 @@ export function DatasetsPage() {
             <button className="button button-quiet" type="button" onClick={() => void refreshDatasets()} disabled={refreshing} aria-busy={refreshing}>
               <RefreshCw className={refreshing ? 'icon-spin' : undefined} size={15} />{refreshing ? '刷新中' : '刷新数据集'}
             </button>
-            <label className="sort-control">排序<select aria-label="数据集排序" value={sort} onChange={(event) => setSort(event.target.value as DatasetSort)}><option value="updated-desc">最近更新</option><option value="updated-asc">最早更新</option><option value="name-asc">名称升序</option><option value="samples-desc">样本量降序</option></select></label>
+            <button ref={sortTriggerRef} className="button button-quiet sort-trigger" type="button" aria-haspopup="menu" aria-expanded={openMenu?.type === 'sort'} onClick={() => setOpenMenu((current) => current?.type === 'sort' ? null : { type: 'sort' })} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); setOpenMenu({ type: 'sort' }); } }}>
+              排序 · {selectedSortLabel}<ChevronDown size={15} />
+            </button>
             <div className="menu-anchor">
               <button className={`button button-quiet ${statusFilter !== 'all' ? 'filter-active' : ''}`} type="button" aria-expanded={filterOpen} onClick={() => setFilterOpen((value) => !value)}><Filter size={15} />筛选{statusFilter !== 'all' && ' · 1'}</button>
               {filterOpen && <div className="filter-popover"><label>数据集状态<select aria-label="按状态筛选数据集" value={statusFilter} onChange={(event) => setStatusFilter(event.target.value as DatasetFilter)}>{statusOptions.map((option) => <option key={option.value} value={option.value}>{option.label}</option>)}</select></label><button type="button" onClick={() => { setStatusFilter('all'); setFilterOpen(false); }}>清除筛选</button></div>}
@@ -376,8 +422,7 @@ export function DatasetsPage() {
                   <td>{formatDateTime(dataset.updatedAt)}</td>
                   <td>
                     <div className="menu-anchor row-menu-anchor">
-                      <button ref={(node) => { if (node) menuTriggerRefs.current.set(dataset.id, node); else menuTriggerRefs.current.delete(dataset.id); }} className="icon-button" type="button" aria-label={`${dataset.name} 更多操作`} aria-haspopup="menu" aria-expanded={openMenuId === dataset.id} onClick={() => setOpenMenuId((current) => current === dataset.id ? null : dataset.id)} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); setOpenMenuId(dataset.id); } }}><MoreHorizontal size={17} /></button>
-                      {openMenuId === dataset.id && <div className="action-menu" role="menu" aria-label={`${dataset.name} 操作`} onKeyDown={(event) => { const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('button')); const current = controls.indexOf(document.activeElement as HTMLButtonElement); if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); controls[(current + (event.key === 'ArrowDown' ? 1 : controls.length - 1)) % controls.length]?.focus(); } }}><button autoFocus type="button" role="menuitem" onClick={() => showDetails(dataset.id)}><Eye size={14} />查看详情</button><button type="button" role="menuitem" onClick={() => void copyDatasetId(dataset)}><Copy size={14} />复制 ID</button></div>}
+                      <button ref={(node) => { if (node) menuTriggerRefs.current.set(dataset.id, node); else menuTriggerRefs.current.delete(dataset.id); }} className="icon-button" type="button" aria-label={`${dataset.name} 更多操作`} aria-haspopup="menu" aria-expanded={openMenu?.type === 'row' && openMenu.datasetId === dataset.id} onClick={() => setOpenMenu((current) => current?.type === 'row' && current.datasetId === dataset.id ? null : { type: 'row', datasetId: dataset.id })} onKeyDown={(event) => { if (event.key === 'ArrowDown') { event.preventDefault(); setOpenMenu({ type: 'row', datasetId: dataset.id }); } }}><MoreHorizontal size={17} /></button>
                     </div>
                   </td>
                 </tr>
@@ -386,6 +431,17 @@ export function DatasetsPage() {
           </div>
         )}
       </Panel>
+
+      {openMenu && <div ref={menuRef} className={`floating-menu ${openMenu.type === 'sort' ? 'sort-menu' : 'action-menu'}`} style={menuPosition} role="menu" aria-label={openMenu.type === 'sort' ? '数据集排序' : `${menuDataset?.name ?? '数据集'} 操作`} onKeyDown={(event) => {
+        const controls = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[role="menuitem"]'));
+        const current = controls.indexOf(document.activeElement as HTMLButtonElement);
+        if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); controls[(current + (event.key === 'ArrowDown' ? 1 : controls.length - 1)) % controls.length]?.focus(); }
+      }}>
+        {openMenu.type === 'sort' ? sortOptions.map((option) => <button key={option.value} type="button" role="menuitem" className={sort === option.value ? 'selected' : undefined} onClick={() => { setSort(option.value); closeMenu(); }}><span>{option.label}</span>{sort === option.value && <Check size={15} aria-label="当前排序" />}</button>) : menuDataset && <>
+          <button type="button" role="menuitem" onClick={() => showDetails(menuDataset.id)}><Eye size={14} />查看详情</button>
+          <button type="button" role="menuitem" onClick={() => void copyDatasetId(menuDataset)}><Copy size={14} />复制 ID</button>
+        </>}
+      </div>}
 
       <Dialog
         open={false}
@@ -437,7 +493,7 @@ export function DatasetsPage() {
         className="dataset-drawer"
         title={selectedDataset?.name ?? '数据集详情'}
         eyebrow="DATASET DETAIL"
-        onClose={() => setDialog(null)}
+        onClose={closeDetails}
         footer={selectedDataset?.status === 'draft' ? <button className="button button-primary" type="button" disabled={selectedDataset.sampleCount === 0 || publishingId === selectedDataset.id} onClick={() => void publishDataset(selectedDataset)}>{publishingId === selectedDataset.id ? '发布中' : '发布并冻结数据集'}</button> : undefined}
       >
         {selectedDataset && <><dl className="detail-list"><div><dt>ID</dt><dd><code>{selectedDataset.id}</code></dd></div><div><dt>状态</dt><dd><StatusBadge value={selectedDataset.status} /> {selectedDataset.archived && <span className="archive-label">已归档</span>}</dd></div><div><dt>样本 / 覆盖</dt><dd>{selectedDataset.sampleCount} 条 · {selectedDataset.coverage === null ? '覆盖未知' : `${selectedDataset.coverage}%`}</dd></div><div><dt>Schema / 版本</dt><dd><code>{selectedDataset.schemaVersion}</code> · {selectedDataset.version}</dd></div><div><dt>内容哈希</dt><dd>{selectedDataset.contentSha256 ? <code>{selectedDataset.contentSha256}</code> : '发布前未知'}</dd></div><div><dt>负责人</dt><dd>{selectedDataset.owner}</dd></div><div><dt>更新时间</dt><dd>{formatDateTime(selectedDataset.updatedAt)}</dd></div></dl>{selectedDataset.status === 'draft' && selectedDataset.sampleCount === 0 && <p className="form-hint">发布前至少需要一条有效样本；空草稿不会发送发布请求。</p>}</>}
