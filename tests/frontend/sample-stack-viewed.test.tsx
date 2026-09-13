@@ -1,13 +1,15 @@
+import { StrictMode } from 'react';
 import { render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { MemoryRouter } from 'react-router-dom';
 import { describe, expect, it, vi } from 'vitest';
-import { apiClient } from '../../frontend/src/api/client';
+import { ApiError, apiClient } from '../../frontend/src/api/client';
 import { report } from '../../frontend/src/api/fixtures';
 import { SampleStack } from '../../frontend/src/components/SampleStack';
 
-function renderStack(samples = report.samples.slice(0, 3)) {
-  return render(<MemoryRouter><SampleStack samples={samples} projectId="demo" taskId="eval-20260826" /></MemoryRouter>);
+function renderStack(samples = report.samples.slice(0, 3), strictMode = false) {
+  const content = <MemoryRouter><SampleStack samples={samples} projectId="demo" taskId="eval-20260826" /></MemoryRouter>;
+  return render(strictMode ? <StrictMode>{content}</StrictMode> : content);
 }
 
 describe('sample browsing persistence feedback', () => {
@@ -41,15 +43,41 @@ describe('sample browsing persistence feedback', () => {
 
   it('shows a non-destructive error and retries only when requested', async () => {
     const user = userEvent.setup();
-    const markViewed = vi.spyOn(apiClient, 'markSampleViewed').mockRejectedValueOnce(new Error('network')).mockResolvedValueOnce(undefined);
+    const markViewed = vi.spyOn(apiClient, 'markSampleViewed').mockRejectedValueOnce(new ApiError('rejected', 503)).mockResolvedValueOnce(undefined);
     renderStack();
 
     const alert = await screen.findByRole('alert');
-    expect(alert).toHaveTextContent('浏览记录未保存');
+    expect(alert).toHaveTextContent('浏览记录被服务端拒绝');
     expect(alert).toHaveTextContent('不会改变人工复核状态');
     expect(markViewed).toHaveBeenCalledTimes(1);
     await user.click(screen.getByRole('button', { name: '重试保存浏览记录' }));
     await waitFor(() => expect(markViewed).toHaveBeenCalledTimes(2));
     await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  });
+
+  it('sends one foreground write in StrictMode, and a retry sends exactly one more request', async () => {
+    const user = userEvent.setup();
+    const markViewed = vi.spyOn(apiClient, 'markSampleViewed').mockRejectedValueOnce(new ApiError('rejected', 503)).mockResolvedValueOnce(undefined);
+    renderStack(undefined, true);
+
+    const alert = await screen.findByRole('alert');
+    expect(markViewed).toHaveBeenCalledTimes(1);
+    expect(alert).toHaveTextContent('浏览记录被服务端拒绝');
+
+    await user.click(screen.getByRole('button', { name: '重试保存浏览记录' }));
+    await waitFor(() => expect(markViewed).toHaveBeenCalledTimes(2));
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+  });
+
+  it('reconciles an uncertain response against the persisted report instead of showing a false failure', async () => {
+    const persisted = report.samples.slice(0, 3).map((sample, index) => index === 0
+      ? { ...sample, viewedAt: '2026-09-13T00:00:00Z', viewedBy: 'local-workspace-user' }
+      : sample);
+    vi.spyOn(apiClient, 'markSampleViewed').mockRejectedValueOnce(new Error('network lost'));
+    vi.spyOn(apiClient, 'getEvaluationReport').mockResolvedValueOnce({ ...report, samples: persisted });
+    renderStack();
+
+    await waitFor(() => expect(screen.queryByRole('alert')).not.toBeInTheDocument());
+    expect(screen.getByRole('article', { name: persisted[0].sampleId })).toHaveTextContent('已浏览');
   });
 });
