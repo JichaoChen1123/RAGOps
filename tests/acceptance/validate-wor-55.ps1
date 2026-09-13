@@ -96,15 +96,23 @@ foreach ($capability in @(
     Assert-Contains $overview $capability "Overview capability is missing: $capability"
 }
 
-foreach ($navigationState in @('nav-coming-soon', 'nav-readonly', 'nav-disabled', 'NEXT', 'READ', 'LIVE', 'API', 'disabled')) {
-    Assert-Contains $workspaceShell $navigationState "Workspace navigation state is missing: $navigationState"
+Assert-Contains $workspaceShell 'nav-readonly' 'Workspace must retain the working read-only configuration entry.'
+Assert-Contains $workspaceShell 'READ' 'Workspace must disclose the read-only configuration state.'
+Assert-Contains $workspaceShell 'LIVE' 'Workspace must retain the working quality-trends entry.'
+
+# Unreleased navigation must be absent rather than presented as a disabled or
+# roadmap action. This verifies the current single-project workbench behavior
+# without treating a non-functional click target as a valid interaction.
+foreach ($unavailableNavigation in @('nav-coming-soon', 'nav-disabled', '其他项目', '版本对比', '项目设置')) {
+    if ($workspaceShell.Contains($unavailableNavigation)) {
+        throw "Unavailable workspace navigation must be hidden: $unavailableNavigation"
+    }
 }
 
 foreach ($styleContract in @(
     '.sidebar nav a:hover',
     '.sidebar nav a.active',
-    '.sidebar nav button.nav-coming-soon:hover',
-    '.sidebar nav button.nav-disabled',
+    '.project-identity',
     'button:disabled'
 )) {
     Assert-Contains $styles $styleContract "Navigation style contract is missing: $styleContract"
