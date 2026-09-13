@@ -23,8 +23,9 @@ button:disabled { cursor: not-allowed; opacity: .55; box-shadow: var(--hover); }
 a { color: var(--accent); text-decoration: none; }
 a:hover { text-decoration: underline; text-underline-offset: 4px; }
 :focus-visible { outline: 2px solid var(--accent); outline-offset: 4px; }
-input, select, textarea { min-height: 44px; min-width: 0; width: 100%; border: 1px solid transparent; border-radius: 12px; padding: 11px 14px; background: var(--surface); box-shadow: var(--input); transition: box-shadow var(--motion); }
-input:focus, select:focus, textarea:focus { box-shadow: var(--input-focus); outline: 2px solid var(--accent); outline-offset: 2px; }
+input:not([type="checkbox"]):not([type="radio"]), select, textarea { min-height: 44px; min-width: 0; width: 100%; border: 1px solid transparent; border-radius: 12px; padding: 11px 14px; background: var(--surface); box-shadow: var(--input); transition: box-shadow var(--motion); }
+input:not([type="checkbox"]):not([type="radio"]):focus, select:focus, textarea:focus { box-shadow: var(--input-focus); outline: 2px solid var(--accent); outline-offset: 2px; }
+input[type="checkbox"], input[type="radio"] { accent-color: var(--accent); inline-size: 16px; block-size: 16px; margin: .2em 0 0; flex: 0 0 auto; box-shadow: none; }
 input::placeholder, textarea::placeholder { color: var(--muted); opacity: 1; }
 textarea { resize: vertical; min-height: 110px; }
 svg { flex-shrink: 0; vertical-align: middle; }
@@ -354,6 +355,8 @@ td .status-badge { white-space: nowrap; }
 @keyframes spin { to { transform: rotate(360deg); } }
 .dialog-backdrop { position: fixed; inset: 0; z-index: 100; display: grid; place-items: center; padding: 32px; background: rgba(83, 94, 112, .45); }
 .dialog { width: min(720px, 100%); max-height: calc(100dvh - 64px); display: flex; flex-direction: column; border-radius: 24px; background: var(--surface); box-shadow: var(--raised); }
+.dialog-backdrop:has(.dataset-drawer) { place-items: stretch end; padding: 0; }
+.dataset-drawer { width: min(560px, 100vw); max-height: 100dvh; min-height: 100dvh; border-radius: 24px 0 0 24px; }
 .dialog-header { padding: 24px; display: flex; align-items: start; justify-content: space-between; gap: 20px; border-bottom: 1px solid var(--line); }
 .dialog-header>div { display: flex; flex-direction: column-reverse; gap: 4px; }
 .dialog-header span { color: var(--muted); font-size: 11px; }
@@ -365,6 +368,19 @@ td .status-badge { white-space: nowrap; }
 .form-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: 24px; }
 .form-grid label { display: flex; flex-direction: column; gap: 10px; font-size: 13px; }
 .field-full { grid-column: 1 / -1; }
+.sample-selection { min-width: 0; border: 1px solid var(--line); border-radius: 14px; padding: 14px; }
+.sample-selection legend { padding: 0 6px; font-weight: 650; }
+.sample-mode { display: flex; align-items: center; flex-wrap: wrap; gap: 16px; }
+.sample-mode label, .sample-picker-row { display: flex !important; flex-direction: row !important; align-items: flex-start; gap: 8px !important; cursor: pointer; }
+.sample-picker-actions { display: flex; align-items: center; gap: 12px; margin-top: 12px; font-size: 12px; }
+.sample-picker-actions span { margin-right: auto; color: var(--muted); }
+.sample-picker-actions button { min-height: 30px; padding: 3px 8px; border-radius: 8px; box-shadow: none; color: var(--accent); }
+.sample-picker { max-height: 220px; overflow: auto; display: grid; gap: 8px; margin-top: 10px; padding: 10px; border: 1px solid var(--line); border-radius: 10px; }
+.sample-picker-row { padding: 6px; border-radius: 8px; min-width: 0; }
+.sample-picker-row:hover { background: var(--surface-light); }
+.sample-picker-row span { min-width: 0; overflow-wrap: anywhere; line-height: 1.45; }
+.sort-control { display: flex; align-items: center; gap: 6px; font-size: 12px; white-space: nowrap; }
+.sort-control select { width: auto; min-height: 36px; padding: 6px 28px 6px 8px; box-shadow: none; }
 .channel-status { display: flex; align-items: center; justify-content: space-between; gap: 20px; margin-top: 24px; padding: 18px 0; border-top: 1px solid var(--line); border-bottom: 1px solid var(--line); }
 .channel-status>div:first-child { min-width: 0; display: flex; flex-direction: column; gap: 6px; }
 .channel-status strong { font-size: 13px; }
