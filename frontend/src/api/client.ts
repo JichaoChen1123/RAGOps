@@ -133,6 +133,8 @@ interface RawEvaluationSample {
   quality_gate_state?: 'quality_gate_not_configured' | 'quality_gate_configured_pending' | 'quality_gate_evaluated';
   review_status: SampleReviewStatus;
   reviewed_at: string | null;
+  viewed_at?: string | null;
+  viewed_by?: string | null;
   latency_ms?: number | null;
   failure_code?: string | null;
   failure_message?: string | null;
@@ -521,6 +523,8 @@ function mapSample(raw: RawEvaluationSample): SampleSummary {
     metricState: raw.metric_state,
     qualityGateState: raw.quality_gate_state,
     reviewStatus: raw.review_status,
+    viewedAt: raw.viewed_at ?? null,
+    viewedBy: raw.viewed_by ?? null,
     contexts: parts.contexts,
     citations: parts.citations,
     error: parts.error,
@@ -679,6 +683,7 @@ function serializeSampleInput(sample: DatasetSampleInput) {
     question: sample.question,
     labels: {
       reference_answer: sample.labels?.referenceAnswer ?? null,
+      reference_answers: sample.labels?.referenceAnswers ?? [],
       gold_document_ids: sample.labels?.goldDocumentIds ?? [],
       gold_evidence_ids: sample.labels?.goldEvidenceIds ?? [],
       expected_diagnoses: sample.labels?.expectedDiagnoses ?? [],
@@ -814,6 +819,7 @@ function mapProviderVerification(raw: Record<string, unknown>): ProviderVerifica
 
 class MockApiClient implements ApiClient {
   private readonly datasetsState = clone(datasets);
+  private readonly datasetSamplesState = new Map<string, DatasetSampleInput[]>();
   private readonly tasksState = clone(evaluationTasks);
   private readonly reportState = clone(report);
   private readonly diagnosisState = clone(diagnosis);
@@ -906,6 +912,16 @@ class MockApiClient implements ApiClient {
     return this.respond(this.datasetsState);
   }
 
+  async getDataset(_projectId: string, datasetId: string): Promise<Dataset> {
+    const dataset = this.datasetsState.find((candidate) => candidate.id === datasetId);
+    if (!dataset) throw new ApiError('Dataset not found', 404, 'DATASET_NOT_FOUND');
+    return this.respond(dataset);
+  }
+
+  listDatasetSamples(_projectId: string, datasetId: string): Promise<DatasetSampleInput[]> {
+    return this.respond(this.datasetSamplesState.get(datasetId) ?? []);
+  }
+
   async createDataset(_projectId: string, input: DatasetCreateInput): Promise<Dataset> {
     const created: Dataset = {
       id: `mock-dataset-${Date.now()}`,
@@ -921,6 +937,7 @@ class MockApiClient implements ApiClient {
       owner: input.owner,
     };
     this.datasetsState.unshift(created);
+    this.datasetSamplesState.set(created.id, clone(input.samples ?? []));
     return this.respond(created);
   }
 
@@ -930,6 +947,7 @@ class MockApiClient implements ApiClient {
     if (dataset.status !== 'draft') throw new ApiError('已发布数据集不可继续导入样本', 409, 'DATASET_IMMUTABLE');
     dataset.sampleCount += samples.length;
     dataset.updatedAt = now();
+    this.datasetSamplesState.set(datasetId, [...(this.datasetSamplesState.get(datasetId) ?? []), ...clone(samples)]);
     return this.respond({ accepted: samples.length, rejected: 0, dataset });
   }
 
@@ -995,7 +1013,7 @@ class MockApiClient implements ApiClient {
       adapterId: 'mock',
       providerId: null,
       isMock: true,
-      totalSamples: dataset.sampleCount,
+      totalSamples: input.sampleIds?.length ?? dataset.sampleCount,
       succeededSamples: 0,
       failedSamples: 0,
       schemaVersion: '2.0',
@@ -1004,6 +1022,8 @@ class MockApiClient implements ApiClient {
     this.tasksState.unshift(created);
     return this.respond(created);
   }
+
+  markSampleViewed(_projectId: string, _taskId: string, _jobSampleId: string, _viewerId: string): Promise<void> { return this.respond(undefined); }
 
   getEvaluationReport(_projectId: string, taskId: string): Promise<EvaluationReport> {
     if (taskId !== this.reportState.task.id) return Promise.reject(new ApiError('找不到指定评测报告', 404, 'REPORT_NOT_FOUND'));
@@ -1134,6 +1154,47 @@ class HttpApiClient implements ApiClient {
     return payload.items.map(mapDataset);
   }
 
+  async getDataset(_projectId: string, datasetId: string): Promise<Dataset> {
+    return mapDataset(await this.request<RawDataset>(`/datasets/${datasetId}`));
+  }
+
+  async listDatasetSamples(_projectId: string, datasetId: string): Promise<DatasetSampleInput[]> {
+    const payload = await this.request<{ items: Array<Record<string, unknown>> }>(`/datasets/${datasetId}/samples`);
+    return payload.items.map((item) => {
+      const labels = asRecord(item.labels);
+      const historical = asRecord(item.historical_output);
+      return {
+        sampleId: String(item.sample_id),
+        question: String(item.question),
+        labels: {
+          referenceAnswer: typeof labels?.reference_answer === 'string' ? labels.reference_answer : null,
+          referenceAnswers: Array.isArray(labels?.reference_answers) ? labels.reference_answers.filter((answer): answer is string => typeof answer === 'string') : [],
+          goldDocumentIds: Array.isArray(labels?.gold_document_ids) ? labels.gold_document_ids.filter((id): id is string => typeof id === 'string') : [],
+          goldEvidenceIds: Array.isArray(labels?.gold_evidence_ids) ? labels.gold_evidence_ids.filter((id): id is string => typeof id === 'string') : [],
+          expectedDiagnoses: Array.isArray(labels?.expected_diagnoses) ? labels.expected_diagnoses.filter((id): id is string => typeof id === 'string') : [],
+        },
+        contexts: Array.isArray(item.contexts) ? item.contexts.map((raw) => {
+          const context = asRecord(raw) ?? {};
+          return {
+            origin: String(context.origin) as NonNullable<DatasetSampleInput['contexts']>[number]['origin'], rank: Number(context.rank),
+            rankBefore: typeof context.rank_before === 'number' ? context.rank_before : null,
+            retrievalRunId: typeof context.retrieval_run_id === 'string' ? context.retrieval_run_id : null,
+            docId: String(context.doc_id), chunkId: String(context.chunk_id),
+            evidenceIds: Array.isArray(context.evidence_ids) ? context.evidence_ids.filter((id): id is string => typeof id === 'string') : [],
+            text: String(context.text), score: typeof context.score === 'number' ? context.score : null,
+            relevanceGrade: typeof context.relevance_grade === 'number' ? context.relevance_grade : null,
+            usefulness: typeof context.usefulness === 'boolean' ? context.usefulness : null,
+          };
+        }) : [],
+        historicalOutput: historical && typeof historical.answer === 'string' && typeof historical.recorded_at === 'string' && Array.isArray(historical.citations)
+          ? { answer: historical.answer, citations: historical.citations.filter((citation): citation is Record<string, unknown> => Boolean(asRecord(citation))), recordedAt: historical.recorded_at }
+          : null,
+        tags: Array.isArray(item.tags) ? item.tags.filter((tag): tag is string => typeof tag === 'string') : [],
+        metadata: item.metadata as Record<string, unknown> ?? {},
+      };
+    });
+  }
+
   async createDataset(_projectId: string, input: DatasetCreateInput): Promise<Dataset> {
     const payload = await this.request<RawDataset>('/datasets', {
       method: 'POST',
@@ -1172,6 +1233,7 @@ class HttpApiClient implements ApiClient {
       body: {
         schema_version: '2.0',
         dataset_id: input.datasetId,
+        sample_ids: input.sampleIds,
         name: input.name ?? null,
         execution: {
           adapter_id: input.adapterId,
@@ -1192,6 +1254,10 @@ class HttpApiClient implements ApiClient {
       },
     });
     return mapTask(payload);
+  }
+
+  async markSampleViewed(_projectId: string, taskId: string, jobSampleId: string, viewerId: string): Promise<void> {
+    await this.request(`/evaluation-jobs/${taskId}/samples/${jobSampleId}/viewed`, { method: 'PATCH', body: { viewer_id: viewerId } });
   }
 
   async getEvaluationReport(_projectId: string, taskId: string): Promise<EvaluationReport> {

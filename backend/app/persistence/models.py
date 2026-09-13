@@ -136,6 +136,8 @@ class EvaluationJobSample(Base):
     diagnoses: Mapped[list[dict[str, Any]]] = mapped_column(JSON, nullable=False, default=list)
     review_status: Mapped[str] = mapped_column(String(20), nullable=False, default="pending", index=True)
     reviewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    viewed_at: Mapped[datetime | None] = mapped_column(DateTime(timezone=True))
+    viewed_by: Mapped[str | None] = mapped_column(String(120))
     latency_ms: Mapped[int | None] = mapped_column(Integer)
     failure_code: Mapped[str | None] = mapped_column(String(80))
     failure_message: Mapped[str | None] = mapped_column(Text)

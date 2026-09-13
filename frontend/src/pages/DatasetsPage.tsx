@@ -1,5 +1,5 @@
 import { Archive, Copy, Eye, FilePlus2, Filter, MoreHorizontal, RefreshCw, Search, Upload } from 'lucide-react';
-import { useEffect, useMemo, useState, type FormEvent } from 'react';
+import { useEffect, useMemo, useRef, useState, type DragEvent, type FormEvent } from 'react';
 import { useOutletContext, useParams } from 'react-router-dom';
 import { apiClient, apiMode } from '../api/client';
 import { Dialog, Toast } from '../components/Interaction';
@@ -10,6 +10,8 @@ import type { WorkspaceOutletContext } from '../components/WorkspaceShell';
 import { useApiResource } from '../hooks/useApiResource';
 import { copyText } from '../lib/browser';
 import { formatDateTime } from '../lib/format';
+import { parseDatasetJsonl } from '../lib/jsonlDataset';
+import { clearDatasetImportRecovery, loadDatasetImportRecovery, sameImportContent, sampleFingerprint, saveDatasetImportRecovery, type DatasetImportRecovery } from '../lib/datasetImportRecovery';
 import type { Dataset, DatasetSampleInput, DatasetStatus } from '../types';
 
 type DisplayDataset = Dataset & { mockOnly?: boolean; archived?: boolean };
@@ -69,6 +71,14 @@ export function DatasetsPage() {
   const [refreshing, setRefreshing] = useState(false);
   const [refreshError, setRefreshError] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
+  const [importSamples, setImportSamples] = useState<DatasetSampleInput[] | null>(null);
+  const [importError, setImportError] = useState<string | null>(null);
+  const [importName, setImportName] = useState('');
+  const [importFileName, setImportFileName] = useState('local.jsonl');
+  const [importProgress, setImportProgress] = useState<{ datasetId: string; created: boolean; imported: boolean } | null>(null);
+  const [importRecovery, setImportRecovery] = useState<DatasetImportRecovery | null>(null);
+  const [pendingImport, setPendingImport] = useState<{ samples: DatasetSampleInput[]; name: string; fileName: string } | null>(null);
+  const fileInput = useRef<HTMLInputElement>(null);
   const [publishingId, setPublishingId] = useState<string | null>(null);
   const [draft, setDraft] = useState({ name: '', description: '', owner: '当前用户' });
   const { state, retry } = useApiResource(
@@ -80,6 +90,16 @@ export function DatasetsPage() {
   useEffect(() => {
     if (state.status === 'success') setLocalDatasets(state.data);
   }, [state]);
+
+  useEffect(() => {
+    const recovery = loadDatasetImportRecovery(projectId);
+    if (!recovery || recovery.imported) return;
+    setImportRecovery(recovery);
+    setImportProgress({ datasetId: recovery.datasetId, created: recovery.created, imported: recovery.imported });
+    setImportSamples(recovery.samples);
+    setImportName(recovery.name);
+    setImportFileName(recovery.fileName);
+  }, [projectId]);
 
   const datasets: DisplayDataset[] = localDatasets ?? (state.status === 'success' ? state.data : []);
   const filtered = useMemo(() => datasets.filter((dataset) => {
@@ -112,6 +132,35 @@ export function DatasetsPage() {
     return false;
   };
 
+  const applyParsedImport = (samples: DatasetSampleInput[], name: string, fileName = 'local.jsonl') => {
+    setImportSamples(samples); setImportError(null); setImportName(name); setPendingImport(null);
+    setImportFileName(fileName); setImportProgress(null); setImportRecovery(null);
+  };
+
+  const receiveJsonl = async (file: File | undefined) => {
+    if (!file) return;
+    const parsed = parseDatasetJsonl(await file.text());
+    setImportError(parsed.error);
+    if (parsed.error) { setImportSamples(null); return; }
+    const name = file.name.replace(/\.jsonl$/i, '') || '本地 JSONL 数据集';
+    if (importRecovery && !sameImportContent(parsed.samples, importRecovery.samples)) {
+      setPendingImport({ samples: parsed.samples, name, fileName: file.name });
+      return;
+    }
+    if (importRecovery) {
+      // Re-selecting the same file is a resume action. Keep its draft ID and
+      // progress instead of letting applyParsedImport clear recovery state.
+      setImportSamples(parsed.samples);
+      setImportError(null);
+      setImportName(importRecovery.name);
+      setImportFileName(file.name);
+      setImportProgress({ datasetId: importRecovery.datasetId, created: importRecovery.created, imported: importRecovery.imported });
+      setPendingImport(null);
+      return;
+    }
+    applyParsedImport(parsed.samples, name, file.name);
+  };
+
   const importExample = async () => {
     setSaving(true);
     try {
@@ -124,8 +173,8 @@ export function DatasetsPage() {
         version: 'v0.1',
       });
       const imported = await apiClient.importDatasetSamples(projectId, created.id, exampleSamples);
-      const published = await apiClient.publishDataset(projectId, imported.dataset.id);
-      setLocalDatasets((current) => [{ ...published, mockOnly: apiMode === 'mock' }, ...(current ?? [])]);
+      // Import intentionally leaves the new dataset as a draft; publishing is a separate action.
+      setLocalDatasets((current) => [{ ...imported.dataset, mockOnly: apiMode === 'mock' }, ...(current ?? [])]);
       setDialog(null);
       setFeedback(apiMode === 'mock'
         ? 'Mock 示例已完成创建、导入 12 条 2.0 样本并发布（仅当前会话）'
@@ -135,6 +184,66 @@ export function DatasetsPage() {
     } finally {
       setSaving(false);
     }
+  };
+
+  const importLocalFile = async () => {
+    if (!importSamples || saving) return;
+    let recoveryForAttempt: DatasetImportRecovery | null = importRecovery;
+    setSaving(true);
+    try {
+      if (importRecovery?.created) {
+        // A resumed import always checks the draft before writing. This avoids
+        // appending to a partially imported dataset after a lost response.
+        const saved = await apiClient.listDatasetSamples(projectId, importRecovery.datasetId);
+        if (sameImportContent(importSamples, saved)) {
+          const dataset = await apiClient.getDataset(projectId, importRecovery.datasetId);
+          clearDatasetImportRecovery(projectId);
+          setImportRecovery(null);
+          setImportProgress({ datasetId: importRecovery.datasetId, created: true, imported: true });
+          setLocalDatasets((current) => [{ ...dataset, mockOnly: apiMode === 'mock' }, ...(current ?? []).filter((item) => item.id !== dataset.id)]);
+          setFeedback('The draft already contains this file; no second import was sent. It remains a draft.');
+          setDialog(null);
+          return;
+        }
+        if (saved.length) {
+          setImportError('The saved draft contains different samples. Import stopped without appending or overwriting it.');
+          return;
+        }
+      }
+      const datasetId = importRecovery?.created ? importRecovery.datasetId : (await apiClient.createDataset(projectId, {
+        name: importName.trim() || '本地 JSONL 数据集', description: '由本地 JSONL 预检后导入的草稿。', owner: '当前用户', version: 'v0.1',
+      })).id;
+      setImportProgress({ datasetId, created: true, imported: false });
+      const recovery: DatasetImportRecovery = { datasetId, created: true, imported: false, name: importName, fileName: importRecovery?.fileName ?? importFileName, fingerprint: sampleFingerprint(importSamples), samples: importSamples };
+      recoveryForAttempt = recovery;
+      saveDatasetImportRecovery(projectId, recovery);
+      setImportRecovery(recovery);
+      const imported = await apiClient.importDatasetSamples(projectId, datasetId, importSamples);
+      setImportProgress({ datasetId, created: true, imported: true });
+      clearDatasetImportRecovery(projectId);
+      setImportRecovery(null);
+      setLocalDatasets((current) => [{ ...imported.dataset, mockOnly: apiMode === 'mock' }, ...(current ?? [])]);
+      setFeedback(`已导入 ${importSamples.length} 条本地 JSONL 样本；数据集仍为草稿，请单独发布。`);
+      setDialog(null);
+    } catch (error) {
+      const recovery = recoveryForAttempt;
+      if (recovery?.created) {
+        try {
+          const saved = await apiClient.listDatasetSamples(projectId, recovery.datasetId);
+          if (sameImportContent(importSamples, saved)) {
+            const dataset = await apiClient.getDataset(projectId, recovery.datasetId);
+            clearDatasetImportRecovery(projectId);
+            setImportRecovery(null);
+            setImportProgress({ datasetId: recovery.datasetId, created: true, imported: true });
+            setLocalDatasets((current) => [{ ...dataset, mockOnly: apiMode === 'mock' }, ...(current ?? []).filter((item) => item.id !== dataset.id)]);
+            setFeedback('导入响应未返回，但已只读核对样本；数据集仍为草稿。');
+            setDialog(null);
+            return;
+          }
+          setImportError(saved.length ? '该草稿已有不同样本，请先核对后再处理；没有追加或覆盖数据。' : (error instanceof Error ? error.message : '导入失败，草稿已保留，可重试。'));
+        } catch { setImportError(error instanceof Error ? error.message : '导入失败，草稿已保留，可重试。'); }
+      } else setImportError(error instanceof Error ? error.message : '导入失败。');
+    } finally { setSaving(false); }
   };
 
   const publishDataset = async (dataset: DisplayDataset) => {
@@ -202,7 +311,14 @@ export function DatasetsPage() {
     setFeedback(dataset.archived ? `已恢复 Mock 数据集“${dataset.name}”` : `已将“${dataset.name}”标记为归档（Mock）`);
   };
 
-  const openImport = () => setDialog('import');
+  const openImport = () => {
+    const recovery = loadDatasetImportRecovery(projectId);
+    if (recovery && !recovery.imported) {
+      setImportRecovery(recovery); setImportProgress({ datasetId: recovery.datasetId, created: true, imported: false });
+      setImportSamples(recovery.samples); setImportName(recovery.name); setImportFileName(recovery.fileName);
+    } else { setImportSamples(null); setImportError(null); setImportProgress(null); setImportName(''); setImportFileName('local.jsonl'); }
+    setDialog('import');
+  };
 
   return (
     <>
@@ -261,7 +377,7 @@ export function DatasetsPage() {
       </Panel>
 
       <Dialog
-        open={dialog === 'import'}
+        open={false}
         title="导入示例 JSONL"
         eyebrow={apiMode === 'mock' ? 'MOCK IMPORT' : 'API IMPORT'}
         onClose={() => setDialog(null)}
@@ -270,6 +386,24 @@ export function DatasetsPage() {
         <p>演示文件包含 12 条人工构造样本，使用 2.0 契约分开问题、参考标签、给定上下文和历史输出。</p>
         <pre className="jsonl-preview">{`{"schema_version":"2.0","sample_id":"refund-example-01","question":"退款后成长值如何处理？","labels":{"reference_answer":"按退款金额比例扣回。","gold_document_ids":["doc-refund-policy-01"]},"contexts":[{"origin":"provided","rank":1,"retrieval_run_id":null,"doc_id":"doc-refund-policy-01","chunk_id":"chunk-refund-policy-01","text":"退款成功后，成长值按退款商品实付金额比例扣回。","score":null}]}`}</pre>
         <p className="form-hint">{apiMode === 'mock' ? '将在内存中依次创建、导入和发布，并明确标记为 MOCK。' : '将依次调用创建、样本导入和发布接口；任一步失败都会显示后端错误，不会改用 fixture。'}</p>
+      </Dialog>
+
+      <Dialog
+        open={dialog === 'import'}
+        title="导入本地 JSONL"
+        eyebrow="PREVIEW BEFORE WRITE"
+        onClose={() => setDialog(null)}
+        footer={<><button className="button button-secondary" type="button" onClick={() => setDialog(null)}>取消</button><button className="button button-secondary" type="button" onClick={() => void importExample()} disabled={saving}>导入演示数据</button><button data-testid="confirm-local-jsonl-import" className="button button-primary" type="button" onClick={() => void importLocalFile()} disabled={saving || !importSamples}>{saving ? '导入中' : '确认创建草稿并导入'}</button></>}
+      >
+        <input data-testid="local-jsonl-input" ref={fileInput} type="file" accept=".jsonl,application/jsonl,application/x-ndjson" hidden onChange={(event) => void receiveJsonl(event.target.files?.[0])} />
+        <button className="file-drop-zone" type="button" onClick={() => fileInput.current?.click()} onDragOver={(event: DragEvent<HTMLButtonElement>) => event.preventDefault()} onDrop={(event: DragEvent<HTMLButtonElement>) => { event.preventDefault(); void receiveJsonl(event.dataTransfer.files[0]); }}>
+          拖放 JSONL 文件到这里，或点击选择文件（UTF-8，支持 BOM / LF / CRLF）
+        </button>
+        {importRecovery && <p className="form-hint" role="status">检测到未完成导入：{importRecovery.fileName}（草稿 {importRecovery.datasetId}）。可继续原操作；不会自动发布。</p>}
+        {pendingImport && <div className="verification-confirm" role="alert"><p>新文件与未完成草稿不同。请选择继续原导入，或明确放弃原草稿后以新文件开始；不会静默写入原草稿。</p><button className="button button-secondary" type="button" onClick={() => setPendingImport(null)}>继续原操作</button><button className="button button-secondary" type="button" onClick={() => { clearDatasetImportRecovery(projectId); applyParsedImport(pendingImport.samples, pendingImport.name, pendingImport.fileName); }}>放弃原操作并使用新文件</button></div>}
+        {importError && <p className="form-hint" role="alert">{importError}</p>}
+        {importSamples && <><label>数据集名称<input aria-label="导入数据集名称" value={importName} onChange={(event) => setImportName(event.target.value)} /></label><p className="form-hint">预检通过：共 {importSamples.length} 条；示例：{importSamples.slice(0, 3).map((item) => item.question).join('；')}。确认前不会发起写入请求。</p></>}
+        {importProgress && !importProgress.imported && <p className="form-hint">创建已完成（{importProgress.datasetId}），样本导入未完成；可直接重试，不会重复创建数据集。</p>}
       </Dialog>
 
       <Dialog

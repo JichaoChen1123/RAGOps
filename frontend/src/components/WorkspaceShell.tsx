@@ -9,11 +9,9 @@ import {
   FlaskConical,
   Gauge,
   Menu,
-  GitCompareArrows,
   PanelLeftClose,
   PanelLeftOpen,
   Search,
-  Settings,
   SlidersHorizontal,
   X,
 } from 'lucide-react';
@@ -52,10 +50,8 @@ export function WorkspaceShell() {
   const [searchParams, setSearchParams] = useSearchParams();
   const [collapsed, setCollapsed] = useState(false);
   const [mobileNavOpen, setMobileNavOpen] = useState(false);
-  const [projectMenuOpen, setProjectMenuOpen] = useState(false);
   const [searchOpen, setSearchOpen] = useState(false);
   const [helpOpen, setHelpOpen] = useState(false);
-  const [roadmapOpen, setRoadmapOpen] = useState(false);
   const [configurationOpen, setConfigurationOpen] = useState(false);
   const [runtimeStatus, setRuntimeStatus] = useState<
     { state: 'loading' } | { state: 'success'; data: ModelExecutionStatus } | { state: 'error'; message: string }
@@ -68,7 +64,6 @@ export function WorkspaceShell() {
   useEffect(() => {
     if (mobileNavOpen) document.getElementById('workspace-content')?.focus({ preventScroll: true });
     setMobileNavOpen(false);
-    setProjectMenuOpen(false);
   }, [location.pathname]);
 
   useEffect(() => {
@@ -146,28 +141,9 @@ export function WorkspaceShell() {
           </button>
         </div>
 
-        <div className="project-switcher-wrap">
-          <button
-            className="project-switcher"
-            type="button"
-            aria-expanded={projectMenuOpen}
-            aria-haspopup="menu"
-            onClick={() => setProjectMenuOpen((value) => !value)}
-          >
-            <span className="project-avatar">CS</span>
-            <span><small>当前项目</small><strong>客服 RAG 生产线</strong></span>
-            <ChevronDown size={15} />
-          </button>
-          {projectMenuOpen && (
-            <div className="project-menu" role="menu">
-              <button type="button" role="menuitem" onClick={() => { setProjectMenuOpen(false); setFeedback('当前已是“客服 RAG 生产线”'); }}>
-                <span className="project-avatar">CS</span><span><strong>客服 RAG 生产线</strong><small>当前项目 · {apiMode === 'mock' ? 'Mock fixture' : 'API 数据'}</small></span>
-              </button>
-              <button type="button" role="menuitem" disabled title="连接项目 API 后可切换">
-                <span className="project-avatar">+</span><span><strong>其他项目</strong><small>连接项目 API 后可用</small></span>
-              </button>
-            </div>
-          )}
+        <div className="project-identity" aria-label="当前项目">
+          <span className="project-avatar">CS</span>
+          <span><small>当前项目</small><strong>客服 RAG 生产线</strong></span>
         </div>
 
         <nav aria-label="主导航">
@@ -176,11 +152,6 @@ export function WorkspaceShell() {
           <NavLink aria-label="数据集" title="数据集" to={preserveState(`/projects/${projectId}/datasets`)}><Database size={17} /><span className="nav-label">数据集</span></NavLink>
           <span className="nav-section">评测与诊断</span>
           <NavLink aria-label="评测任务" title="评测任务" to={preserveState(`/projects/${projectId}/evaluations`)}><FlaskConical size={17} /><span className="nav-label">评测任务</span></NavLink>
-          <button className="nav-item nav-coming-soon" type="button" aria-label="版本对比，即将推出" onClick={() => setRoadmapOpen(true)}>
-            <GitCompareArrows size={17} />
-            <span className="nav-item-copy"><span className="nav-label">版本对比</span><small>模型 / Prompt 回归</small></span>
-            <span className="nav-badge nav-badge-next">NEXT</span>
-          </button>
           <Link className="nav-item nav-secondary" aria-label="趋势看板，从概览查看" title="打开项目概览中的质量趋势" to={`${preserveState(`/projects/${projectId}/overview`)}#quality-trends`}>
             <BarChart3 size={17} />
             <span className="nav-item-copy"><span className="nav-label">趋势看板</span><small>质量 / 延迟 / 成本</small></span>
@@ -192,16 +163,11 @@ export function WorkspaceShell() {
             <span className="nav-item-copy"><span className="nav-label">模型与 Prompt</span><small>当前运行版本</small></span>
             <span className="nav-badge">READ</span>
           </button>
-          <button className="nav-item nav-disabled" type="button" aria-label="项目设置，连接 API 后开放" title="连接项目 API 后开放" disabled>
-            <Settings size={17} />
-            <span className="nav-item-copy"><span className="nav-label">项目设置</span><small>连接 API 后开放</small></span>
-            <span className="nav-badge">API</span>
-          </button>
         </nav>
 
         <div className="sidebar-footer">
           <button type="button" onClick={() => setHelpOpen(true)}><CircleHelp size={16} />使用帮助</button>
-          <button className="operator" type="button" onClick={() => setFeedback('Mock 工作台不提供账户设置') }><span>JC</span><div><strong>Jichao</strong><small>项目管理员</small></div><ChevronDown size={14} /></button>
+          <div className="operator" aria-label="当前操作者"><span>JC</span><div><strong>Jichao</strong><small>项目管理员</small></div></div>
         </div>
       </aside>
 
@@ -249,17 +215,6 @@ export function WorkspaceShell() {
           <div><strong>3. 定位故障</strong><p>从完成任务进入报告，再下钻失败样本核对检索证据与引用。</p></div>
         </div>
         <p className="form-hint">顶部同时展示前端数据源、后端执行器和提供方配置状态。API 数据不等于模型已连接；连接检查需在评测任务页由用户主动发起。</p>
-      </Dialog>
-      <Dialog open={roadmapOpen} title="版本对比 · 下一阶段" eyebrow="ROADMAP / PHASE 2" onClose={() => setRoadmapOpen(false)}>
-        <div className="availability-card">
-          <div className="availability-icon"><GitCompareArrows size={19} /></div>
-          <div><strong>入口已定义，交互将在下一阶段接入</strong><p>计划支持选择基线任务，对比模型、Prompt、检索配置与指标回归，并下钻到变化样本。</p></div>
-        </div>
-        <div className="roadmap-list" aria-label="版本对比计划能力">
-          <div><span>01</span><strong>版本上下文</strong><small>Dataset / Model / Prompt / Retriever</small></div>
-          <div><span>02</span><strong>指标回归</strong><small>Delta / Gate / Regression samples</small></div>
-          <div><span>03</span><strong>故障差异</strong><small>Diagnosis diff / Evidence trace</small></div>
-        </div>
       </Dialog>
       <Dialog open={configurationOpen} title="模型与 Prompt · 只读快照" eyebrow="ACTIVE EVALUATION CONTEXT" onClose={() => setConfigurationOpen(false)}>
         <div className="configuration-snapshot">

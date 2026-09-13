@@ -26,17 +26,18 @@ function deferred<T>() {
 }
 
 describe('RAGOps MVP interaction loops', () => {
-  it('imports the example JSONL from the dataset empty state', async () => {
+  it('imports demonstration data from the local-import dialog without publishing it', async () => {
     const user = userEvent.setup();
     renderRoute('/projects/demo/datasets?state=empty');
 
     await user.click(await screen.findByRole('button', { name: /导入首个数据集/ }));
-    const dialog = screen.getByRole('dialog', { name: '导入示例 JSONL' });
-    expect(within(dialog).getByText(/12 条人工构造样本/)).toBeInTheDocument();
-    await user.click(within(dialog).getByRole('button', { name: /^导入示例 JSONL$/ }));
+    const dialog = screen.getByRole('dialog', { name: '导入本地 JSONL' });
+    expect(within(dialog).getByText(/拖放 JSONL 文件/)).toBeInTheDocument();
+    await user.click(within(dialog).getByRole('button', { name: '导入演示数据' }));
 
     expect(await screen.findByText('退款政策示例 JSONL')).toBeInTheDocument();
-    expect(screen.getByRole('status')).toHaveTextContent('创建、导入 12 条 2.0 样本并发布');
+    expect(screen.getByRole('status')).toHaveTextContent('创建、导入 12 条 2.0 样本');
+    expect(screen.getByText('草稿')).toBeInTheDocument();
   });
 
   it('creates, filters and archives a local dataset', async () => {
@@ -122,7 +123,7 @@ describe('RAGOps MVP interaction loops', () => {
     renderRoute('/projects/demo/evaluations?state=empty');
 
     await user.click(await screen.findByRole('button', { name: /新建首个任务/ }));
-    await user.click(screen.getByRole('button', { name: '创建评测任务' }));
+    await user.click(screen.getByRole('button', { name: /创建评测任务/ }));
     const created = await screen.findByText(/模拟评测/);
     const row = created.closest('tr');
     expect(row).not.toBeNull();
@@ -275,10 +276,7 @@ describe('RAGOps MVP interaction loops', () => {
 
     await user.click(screen.getByRole('button', { name: '收起侧边栏' }));
     expect(screen.getByRole('button', { name: '展开侧边栏' })).toHaveAttribute('aria-pressed', 'true');
-    await user.click(screen.getByRole('button', { name: /客服 RAG 生产线/ }));
-    const projectMenu = screen.getByRole('menu');
-    expect(within(projectMenu).getByRole('menuitem', { name: /其他项目/ })).toBeDisabled();
-    await user.click(within(projectMenu).getByRole('menuitem', { name: /客服 RAG 生产线/ }));
-    expect(await screen.findByRole('status')).toHaveTextContent('当前已是“客服 RAG 生产线”');
+    expect(screen.getByLabelText('当前项目')).toHaveTextContent('客服 RAG 生产线');
+    expect(screen.queryByText('其他项目')).not.toBeInTheDocument();
   });
 });

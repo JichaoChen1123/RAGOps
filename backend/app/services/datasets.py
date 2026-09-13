@@ -66,7 +66,7 @@ def _add_samples(
             "historical_answer": sample.normalized_historical_answer,
             "historical_citations": sample.normalized_historical_citations,
             "tags": sample.tags,
-            "metadata": sample.metadata,
+            "metadata": {**sample.metadata, **({"reference_answers": labels.reference_answers} if labels.reference_answers else {})},
         }
         session.add(
             DatasetSample(
@@ -86,7 +86,7 @@ def _add_samples(
                 ),
                 tags=sample.tags,
                 expected_diagnoses=labels.expected_diagnoses,
-                metadata_json=sample.metadata,
+                metadata_json={**sample.metadata, **({"reference_answers": labels.reference_answers} if labels.reference_answers else {})},
                 content_sha256=_canonical_hash(raw),
                 normalized_schema_version=sample.schema_version,
                 context_origin=context_origin if contexts else "unknown",
@@ -280,6 +280,7 @@ def sample_to_response(sample: DatasetSample) -> DatasetSampleResponse:
         question=sample.question,
         labels={
             "reference_answer": sample.reference_answer,
+            "reference_answers": sample.metadata_json.get("reference_answers", []),
             "gold_document_ids": sample.gold_document_ids,
             "gold_evidence_ids": sample.gold_evidence_ids,
             "expected_diagnoses": sample.expected_diagnoses,

@@ -10,7 +10,7 @@ import { StatusBadge } from '../components/StatusBadge';
 import type { WorkspaceOutletContext } from '../components/WorkspaceShell';
 import { useApiResource } from '../hooks/useApiResource';
 import { formatDateTime } from '../lib/format';
-import type { Dataset, EvaluationTask, ModelChannel, ModelExecutionStatus, TaskStatus } from '../types';
+import type { Dataset, DatasetSampleInput, EvaluationTask, ModelChannel, ModelExecutionStatus, TaskStatus } from '../types';
 
 type TaskFilter = 'all' | TaskStatus;
 
@@ -46,6 +46,8 @@ export function EvaluationsPage() {
   const [verifying, setVerifying] = useState<'authentication' | 'generation' | null>(null);
   const [pendingGenerationVerification, setPendingGenerationVerification] = useState(false);
   const [modelStatus, setModelStatus] = useState<ModelExecutionStatus | null>(null);
+  const [datasetSamples, setDatasetSamples] = useState<DatasetSampleInput[]>([]);
+  const [selectedSampleIds, setSelectedSampleIds] = useState<string[] | null>(null);
   const [draft, setDraft] = useState({
     datasetId: apiMode === 'mock' ? mockDatasets.find((item) => item.status === 'ready')?.id ?? '' : '',
     adapterId: 'mock' as ModelChannel,
@@ -86,6 +88,11 @@ export function EvaluationsPage() {
   useEffect(() => {
     void apiClient.getModelExecutionStatus().then(setModelStatus).catch(() => setModelStatus(null));
   }, []);
+
+  useEffect(() => {
+    if (!draft.datasetId) { setDatasetSamples([]); setSelectedSampleIds(null); return; }
+    void apiClient.listDatasetSamples(projectId, draft.datasetId).then((items) => { setDatasetSamples(items); setSelectedSampleIds(null); }).catch(() => setDatasetSamples([]));
+  }, [projectId, draft.datasetId]);
 
   const selectedProvider = modelStatus?.providers.find((provider) => provider.providerId === draft.adapterId);
   const selectedModel = selectedProvider?.models.find((model) => model.id === draft.model);
@@ -129,6 +136,7 @@ export function EvaluationsPage() {
     try {
       const created = await apiClient.createEvaluationTask(projectId, {
         datasetId: dataset.id,
+        sampleIds: selectedSampleIds ?? undefined,
         name: `${dataset.name} · ${draft.adapterId === 'mock' ? '模拟' : draft.adapterId === 'codex_chatgpt' ? 'Codex 账号' : 'OpenAI 兼容'}评测`,
         adapterId: draft.adapterId,
         prompt: { version: draft.promptVersion, text: draft.promptText },
@@ -267,10 +275,11 @@ export function EvaluationsPage() {
         title="新建评测任务"
         eyebrow={apiMode === 'mock' ? 'MOCK FRONTEND' : 'API EVALUATION'}
         onClose={() => { setCreateOpen(false); setPendingGenerationVerification(false); }}
-        footer={<><button className="button button-secondary" type="button" onClick={() => setCreateOpen(false)}>取消</button><button className="button button-primary" type="submit" form="create-evaluation-form" disabled={saving || availableDatasets.length === 0}><Play size={15} />创建评测任务</button></>}
+        footer={<><button className="button button-secondary" type="button" onClick={() => setCreateOpen(false)}>取消</button><button className="button button-primary" type="submit" form="create-evaluation-form" disabled={saving || availableDatasets.length === 0 || (selectedSampleIds !== null && selectedSampleIds.length === 0)}><Play size={15} />创建评测任务（{(selectedSampleIds?.length ?? datasetSamples.length) || availableDatasets.find((item) => item.id === draft.datasetId)?.sampleCount || 0} 条）</button></>}
       >
         <form className="form-grid" id="create-evaluation-form" onSubmit={createTask}>
           <label>已发布数据集<select aria-label="选择评测数据集" value={draft.datasetId} onChange={(event) => setDraft((current) => ({ ...current, datasetId: event.target.value }))}>{availableDatasets.map((dataset) => <option key={dataset.id} value={dataset.id}>{dataset.name} · {dataset.sampleCount} 条</option>)}</select></label>
+          <fieldset className="field-full"><legend>评测样本（{selectedSampleIds?.length ?? datasetSamples.length} / {datasetSamples.length || availableDatasets.find((item) => item.id === draft.datasetId)?.sampleCount || 0}）</legend><label><input type="radio" checked={selectedSampleIds === null} onChange={() => setSelectedSampleIds(null)} /> 全部样本</label><label><input type="radio" checked={selectedSampleIds !== null} onChange={() => setSelectedSampleIds(datasetSamples.map((item) => item.sampleId))} /> 选择部分</label>{selectedSampleIds !== null && <div className="sample-picker">{datasetSamples.map((sample) => <label key={sample.sampleId}><input type="checkbox" checked={selectedSampleIds.includes(sample.sampleId)} onChange={() => setSelectedSampleIds((current) => current?.includes(sample.sampleId) ? current.filter((id) => id !== sample.sampleId) : [...(current ?? []), sample.sampleId])} />{sample.question}</label>)}</div>}{selectedSampleIds !== null && selectedSampleIds.length === 0 && <p className="form-hint">请至少选择一条样本；空选择不会提交。</p>}</fieldset>
           <label>模型通道<select aria-label="选择后端执行器" value={draft.adapterId} onChange={(event) => changeAdapter(event.target.value as ModelChannel)}><option value="mock">mock（离线模拟）</option><option value="codex_chatgpt">codex_chatgpt（ChatGPT 登录）</option><option value="openai_compatible">openai_compatible（API Key）</option></select></label>
           <label>上下文策略<select aria-label="选择上下文策略" value={draft.contextPolicy} onChange={(event) => setDraft((current) => ({ ...current, contextPolicy: event.target.value as typeof current.contextPolicy }))}><option value="dataset_contexts">dataset_contexts（给定上下文）</option><option value="none">none（不提供上下文）</option><option value="retrieval">retrieval（本阶段不可用）</option></select></label>
           <label>请求模型{draft.adapterId === 'codex_chatgpt' && selectedProvider?.models.length ? <select aria-label="请求模型" value={draft.model} onChange={(event) => { const model = selectedProvider.models.find((item) => item.id === event.target.value); setDraft((current) => ({ ...current, model: event.target.value, reasoningEffort: model?.reasoningEfforts[0] ?? current.reasoningEffort })); }}>{selectedProvider.models.map((model) => <option key={model.id} value={model.id}>{model.displayName}{model.isDefault ? '（默认）' : ''}</option>)}</select> : <input required aria-label="请求模型" value={draft.model} onChange={(event) => setDraft((current) => ({ ...current, model: event.target.value }))} />}</label>

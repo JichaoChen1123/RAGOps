@@ -131,6 +131,7 @@ class SampleLabelsInput(BaseModel):
     model_config = ConfigDict(extra="forbid")
 
     reference_answer: str | None = None
+    reference_answers: list[str] = Field(default_factory=list)
     gold_document_ids: list[str] = Field(default_factory=list)
     gold_evidence_ids: list[str] = Field(default_factory=list)
     expected_diagnoses: list[str] = Field(default_factory=list)
@@ -138,6 +139,7 @@ class SampleLabelsInput(BaseModel):
     @model_validator(mode="after")
     def label_identifiers_are_unique(self) -> SampleLabelsInput:
         for field_name in (
+            "reference_answers",
             "gold_document_ids",
             "gold_evidence_ids",
             "expected_diagnoses",

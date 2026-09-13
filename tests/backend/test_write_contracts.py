@@ -149,6 +149,37 @@ def test_review_state_round_trip_is_consistent_in_list_and_export(client, sample
     assert reset_export["samples"][0]["review_status"] == "pending"
 
 
+def test_browsing_marker_is_job_scoped_and_does_not_change_review(client, sample_payload) -> None:
+    dataset = client.post(
+        "/api/v1/datasets",
+        json={"name": "viewed-round-trip", "owner": "quality-platform", "samples": [sample_payload]},
+    )
+    dataset_id = dataset.json()["id"]
+    assert client.post(f"/api/v1/datasets/{dataset_id}:publish").status_code == 200
+    first = client.post("/api/v1/evaluation-jobs", json={"dataset_id": dataset_id, "config_version": "viewed-first"}).json()
+    second = client.post("/api/v1/evaluation-jobs", json={"dataset_id": dataset_id, "config_version": "viewed-second"}).json()
+    first_sample = client.get(f"/api/v1/evaluation-jobs/{first['id']}/samples").json()["items"][0]
+    assert first_sample["viewed_at"] is None
+    assert first_sample["review_status"] == "pending"
+
+    viewed = client.patch(
+        f"/api/v1/evaluation-jobs/{first['id']}/samples/{first_sample['id']}/viewed",
+        json={"viewer_id": "local-workspace-user"},
+    )
+    assert viewed.status_code == 200
+    assert viewed.json()["viewed_by"] == "local-workspace-user"
+    assert viewed.json()["viewed_at"] is not None
+    assert viewed.json()["review_status"] == "pending"
+    reloaded = client.get(f"/api/v1/evaluation-jobs/{first['id']}/samples").json()["items"][0]
+    other_job = client.get(f"/api/v1/evaluation-jobs/{second['id']}/samples").json()["items"][0]
+    assert reloaded["viewed_at"] is not None
+    assert other_job["viewed_at"] is None
+    assert client.patch(
+        f"/api/v1/evaluation-jobs/{first['id']}/samples/{other_job['id']}/viewed",
+        json={"viewer_id": "local-workspace-user"},
+    ).status_code == 404
+
+
 def test_openapi_exposes_mvp_write_contracts(client) -> None:
     document = client.get("/openapi.json").json()
 

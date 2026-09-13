@@ -257,6 +257,8 @@ const sampleSummary = (overrides: Partial<SampleSummary>): SampleSummary => ({
   runStatus: 'succeeded',
   qualityStatus: 'not_evaluated',
   reviewStatus: 'pending',
+  viewedAt: null,
+  viewedBy: null,
   contexts,
   citations: [
     {

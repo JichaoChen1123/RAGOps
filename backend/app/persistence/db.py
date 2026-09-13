@@ -64,7 +64,8 @@ class Database:
                 self._record_migration(connection, "0001_mvp_baseline")
                 self._record_migration(connection, "0002_model_execution_contract")
                 self._record_migration(connection, "0003_answer_score_rescore")
-                return ["0001_mvp_baseline", "0002_model_execution_contract", "0003_answer_score_rescore"]
+                self._record_migration(connection, "0004_sample_selection_and_browsing")
+                return ["0001_mvp_baseline", "0002_model_execution_contract", "0003_answer_score_rescore", "0004_sample_selection_and_browsing"]
 
             # answer_rescores was introduced after the MVP baseline and is added by 0003.
             baseline_tables = application_tables - {"answer_rescores"}
@@ -97,6 +98,15 @@ class Database:
                 applied.append("0003_answer_score_rescore")
             else:
                 self._validate_answer_rescore_table(connection)
+            if "0004_sample_selection_and_browsing" not in versions:
+                self._apply_sample_browsing(connection)
+                self._record_migration(connection, "0004_sample_selection_and_browsing")
+                applied.append("0004_sample_selection_and_browsing")
+            else:
+                required = {"viewed_at", "viewed_by"}
+                actual = {column["name"] for column in inspect(connection).get_columns("evaluation_job_samples")}
+                if missing := required - actual:
+                    raise RuntimeError("Migration 0004 is recorded but evaluation_job_samples is missing: " + ", ".join(sorted(missing)))
         return applied
 
     @staticmethod
@@ -317,6 +327,13 @@ class Database:
         missing = required - actual
         if missing:
             raise RuntimeError("Migration 0003 is recorded but answer_rescores is missing: " + ", ".join(sorted(missing)))
+
+    @staticmethod
+    def _apply_sample_browsing(connection: object) -> None:
+        existing = {column["name"] for column in inspect(connection).get_columns("evaluation_job_samples")}
+        for name, definition in {"viewed_at": "DATETIME", "viewed_by": "VARCHAR(120)"}.items():
+            if name not in existing:
+                connection.execute(text(f"ALTER TABLE evaluation_job_samples ADD COLUMN {name} {definition}"))  # type: ignore[attr-defined]
 
     def dispose(self) -> None:
         self.engine.dispose()

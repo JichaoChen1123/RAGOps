@@ -168,7 +168,7 @@ def test_legacy_database_upgrade_is_idempotent_and_preserves_rows(tmp_path) -> N
     second = database.migrate()
     database.dispose()
 
-    assert first == ["0001_mvp_baseline", "0002_model_execution_contract", "0003_answer_score_rescore"]
+    assert first == ["0001_mvp_baseline", "0002_model_execution_contract", "0003_answer_score_rescore", "0004_sample_selection_and_browsing"]
     assert second == []
     reopened = Database(f"sqlite:///{path.as_posix()}")
     assert reopened.migrate() == []
@@ -204,7 +204,7 @@ def test_legacy_database_upgrade_is_idempotent_and_preserves_rows(tmp_path) -> N
         rescore_indexes = inspect(connection).get_indexes("answer_rescores")
     reopened.dispose()
 
-    assert versions == ["0001_mvp_baseline", "0002_model_execution_contract", "0003_answer_score_rescore"]
+    assert versions == ["0001_mvp_baseline", "0002_model_execution_contract", "0003_answer_score_rescore", "0004_sample_selection_and_browsing"]
     assert sample[0:3] == ("1.0", "legacy_unknown", "Legacy historical answer")
     assert json.loads(sample[3])[0]["chunk_id"] == "chunk-1"
     assert json.loads(sample[4]) == {"kept": True}
@@ -226,7 +226,7 @@ def test_empty_database_migrates_to_head_and_second_run_is_empty(tmp_path) -> No
     path = tmp_path / "empty.db"
     database = Database(f"sqlite:///{path.as_posix()}")
 
-    assert database.migrate() == ["0001_mvp_baseline", "0002_model_execution_contract", "0003_answer_score_rescore"]
+    assert database.migrate() == ["0001_mvp_baseline", "0002_model_execution_contract", "0003_answer_score_rescore", "0004_sample_selection_and_browsing"]
     assert database.migrate() == []
     tables = set(inspect(database.engine).get_table_names())
     database.dispose()
