@@ -8,6 +8,7 @@ export function Dialog({
   children,
   footer,
   onClose,
+  className,
 }: {
   open: boolean;
   title: string;
@@ -15,6 +16,7 @@ export function Dialog({
   children: ReactNode;
   footer?: ReactNode;
   onClose: () => void;
+  className?: string;
 }) {
   const titleId = useId();
   const dialogRef = useRef<HTMLElement>(null);
@@ -62,7 +64,7 @@ export function Dialog({
         if (event.target === event.currentTarget) onClose();
       }}
     >
-      <section ref={dialogRef} tabIndex={-1} className="dialog" role="dialog" aria-modal="true" aria-labelledby={titleId}>
+      <section ref={dialogRef} tabIndex={-1} className={`dialog${className ? ` ${className}` : ''}`} role="dialog" aria-modal="true" aria-labelledby={titleId}>
         <header className="dialog-header">
           <div>{eyebrow && <span>{eyebrow}</span>}<h2 id={titleId}>{title}</h2></div>
           <button className="icon-button" type="button" aria-label={`关闭${title}`} onClick={onClose}><X size={17} /></button>

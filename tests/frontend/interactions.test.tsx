@@ -40,7 +40,7 @@ describe('RAGOps MVP interaction loops', () => {
     expect(screen.getByText('草稿')).toBeInTheDocument();
   });
 
-  it('creates, filters and archives a local dataset', async () => {
+  it('creates, filters and only exposes implemented local dataset actions', async () => {
     const user = userEvent.setup();
     renderRoute('/projects/demo/datasets');
     await screen.findByRole('heading', { level: 2, name: '数据集管理' });
@@ -56,8 +56,14 @@ describe('RAGOps MVP interaction loops', () => {
     expect(screen.queryByText('账单边界样本')).not.toBeInTheDocument();
 
     await user.click(screen.getByRole('button', { name: '售后边界样本 更多操作' }));
-    await user.click(screen.getByRole('menuitem', { name: /标记归档/ }));
-    expect(await screen.findByText('已归档')).toBeInTheDocument();
+    expect(screen.getByRole('menuitem', { name: '查看详情' })).toBeInTheDocument();
+    const actionItems = screen.getAllByRole('menuitem');
+    expect(actionItems).toHaveLength(2);
+    actionItems.forEach((item) => {
+      expect(item.querySelector('.action-menu-icon')).toBeTruthy();
+      expect(item.querySelector('.action-menu-label')).toBeTruthy();
+    });
+    expect(screen.queryByRole('menuitem', { name: /归档/ })).not.toBeInTheDocument();
   });
 
   it('searches datasets and makes details and copy actions observable', async () => {

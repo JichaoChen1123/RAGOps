@@ -1150,8 +1150,17 @@ class HttpApiClient implements ApiClient {
   }
 
   async listDatasets(_projectId: string): Promise<Dataset[]> {
-    const payload = await this.request<RawDatasetList>('/datasets');
-    return payload.items.map(mapDataset);
+    // The API is cursor-paginated. Fetch the complete bounded result before the
+    // page applies a client-side sort, otherwise a sort would only affect page 1.
+    const items: Dataset[] = [];
+    let cursor: string | null = null;
+    do {
+      const pageQuery: string = cursor ? `?cursor=${encodeURIComponent(cursor)}` : '';
+      const payload: RawDatasetList = await this.request<RawDatasetList>(`/datasets${pageQuery}`);
+      items.push(...payload.items.map(mapDataset));
+      cursor = payload.next_cursor;
+    } while (cursor);
+    return items;
   }
 
   async getDataset(_projectId: string, datasetId: string): Promise<Dataset> {
