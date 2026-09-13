@@ -438,8 +438,8 @@ export function DatasetsPage() {
         if (event.key === 'ArrowDown' || event.key === 'ArrowUp') { event.preventDefault(); controls[(current + (event.key === 'ArrowDown' ? 1 : controls.length - 1)) % controls.length]?.focus(); }
       }}>
         {openMenu.type === 'sort' ? sortOptions.map((option) => <button key={option.value} type="button" role="menuitem" className={sort === option.value ? 'selected' : undefined} onClick={() => { setSort(option.value); closeMenu(); }}><span>{option.label}</span>{sort === option.value && <Check size={15} aria-label="当前排序" />}</button>) : menuDataset && <>
-          <button type="button" role="menuitem" onClick={() => showDetails(menuDataset.id)}><Eye size={14} />查看详情</button>
-          <button type="button" role="menuitem" onClick={() => void copyDatasetId(menuDataset)}><Copy size={14} />复制 ID</button>
+          <button type="button" role="menuitem" onClick={() => showDetails(menuDataset.id)}><span className="action-menu-icon" aria-hidden="true"><Eye size={14} /></span><span className="action-menu-label">查看详情</span></button>
+          <button type="button" role="menuitem" onClick={() => void copyDatasetId(menuDataset)}><span className="action-menu-icon" aria-hidden="true"><Copy size={14} /></span><span className="action-menu-label">复制 ID</span></button>
         </>}
       </div>}
 

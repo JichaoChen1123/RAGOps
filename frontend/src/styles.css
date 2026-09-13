@@ -156,6 +156,9 @@ td .status-badge { white-space: nowrap; }
 .floating-menu { position: fixed; z-index: 90; width: 190px; padding: 6px; display: grid; gap: 2px; background: var(--surface-light); border-radius: 14px; box-shadow: var(--raised); }
 .floating-menu.sort-menu { width: 224px; }
 .floating-menu button { width: 100%; min-height: 34px; padding: 7px 10px; display: flex; gap: 9px; align-items: center; justify-content: flex-start; text-align: left; font-size: 12px; background: transparent; box-shadow: none; border: 0; border-radius: 9px; }
+.floating-menu.action-menu button { display: grid; grid-template-columns: 14px minmax(0, 1fr); column-gap: 9px; }
+.action-menu-icon { width: 14px; height: 14px; display: grid; place-items: center; }
+.action-menu-label { min-width: 0; }
 .floating-menu button svg:last-child { margin-left: auto; color: var(--accent); }
 .floating-menu button:hover, .floating-menu button:focus-visible, .floating-menu button.selected { color: var(--accent); background: color-mix(in srgb, var(--accent) 11%, transparent); box-shadow: none; }
 .filter-active { color: var(--accent); box-shadow: var(--pressed); }

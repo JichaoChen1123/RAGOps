@@ -57,6 +57,12 @@ describe('RAGOps MVP interaction loops', () => {
 
     await user.click(screen.getByRole('button', { name: '售后边界样本 更多操作' }));
     expect(screen.getByRole('menuitem', { name: '查看详情' })).toBeInTheDocument();
+    const actionItems = screen.getAllByRole('menuitem');
+    expect(actionItems).toHaveLength(2);
+    actionItems.forEach((item) => {
+      expect(item.querySelector('.action-menu-icon')).toBeTruthy();
+      expect(item.querySelector('.action-menu-label')).toBeTruthy();
+    });
     expect(screen.queryByRole('menuitem', { name: /归档/ })).not.toBeInTheDocument();
   });
 
